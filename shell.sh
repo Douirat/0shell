@@ -1,0 +1,1 @@
+cd mini-shell && cargo run
