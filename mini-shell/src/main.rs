@@ -33,3 +33,6 @@ fn main() {
     }
 }
 
+fn ls(){
+    //TODO: Mohammed ammine will create the ls logic here:
+}
