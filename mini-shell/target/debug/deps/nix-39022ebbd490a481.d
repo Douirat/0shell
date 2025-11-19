@@ -1,0 +1,13 @@
+/home/bdouirat/Desktop/0shell/mini-shell/target/debug/deps/libnix-39022ebbd490a481.rmeta: /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/lib.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/macros.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/errno.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/fcntl.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/mod.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/signal.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/sysinfo.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/time.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/unistd.rs
+
+/home/bdouirat/Desktop/0shell/mini-shell/target/debug/deps/nix-39022ebbd490a481.d: /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/lib.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/macros.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/errno.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/fcntl.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/mod.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/signal.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/sysinfo.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/time.rs /home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/unistd.rs
+
+/home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/lib.rs:
+/home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/macros.rs:
+/home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/errno.rs:
+/home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/fcntl.rs:
+/home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/mod.rs:
+/home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/signal.rs:
+/home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/sysinfo.rs:
+/home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/sys/time.rs:
+/home/bdouirat/.cargo/registry/src/index.crates.io-6f17d22bba15001f/nix-0.27.1/src/unistd.rs:
