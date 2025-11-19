@@ -1,4 +1,5 @@
  use std::collections::HashMap;
+ use nix::unistd::{fork, ForkResult, getpid, execvp};
 
 pub fn execute_command(commands: &crate::shell::parser::Commands) {
 // since i'm validating the comand i will validate the args as well
@@ -24,5 +25,24 @@ pub fn execute_command(commands: &crate::shell::parser::Commands) {
                 }
             }
         }
+
+        match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            println!("Child process: PID = {}", getpid());
+            // Child can do something different here
+        }
+        Ok(ForkResult::Parent { child }) => {
+            println!("Parent process: PID = {}, child PID = {}", getpid(), child);
+            // Parent can do something here
+        }
+        Err(err) => {
+            eprintln!("Fork failed: {}", err);
+        }
     }
-    }
+}
+
+}
+
+
+    
+
