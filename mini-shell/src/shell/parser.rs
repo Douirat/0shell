@@ -13,17 +13,40 @@ impl Commands {
         Commands { commands }
     }
 
-    pub fn parse_commands(input: &str) -> Commands {
-        /*
-        ----> Split the input by simicolones or new line && operator for multiple commands:
-        */
-        let command_strs: Vec<&str> = input.split(|c| c == ';' || c == '&' || c == '\n').collect();
-        let commands: Vec<Command> = command_strs
-            .iter()
-            .map(|&cmd_str| Command::parse_command(cmd_str))
-            .collect();
-        Commands::new(commands)
+pub fn parse_commands(input: &str) -> Commands {
+    let mut commands = Vec::new();
+    let mut current = String::new();
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            ';' | '\n' => {
+                if !current.trim().is_empty() {
+                    commands.push(Command::parse_command(&current));
+                }
+                current.clear();
+            }
+            '&' => {
+                // Check if next char is also &
+                if let Some('&') = chars.peek() {
+                    chars.next(); // consume second '&'
+                    if !current.trim().is_empty() {
+                        commands.push(Command::parse_command(&current));
+                    }
+                    current.clear();
+                }
+            }
+            _ => current.push(c),
+        }
     }
+
+    if !current.trim().is_empty() {
+        commands.push(Command::parse_command(&current));
+    }
+
+    Commands::new(commands)
+}
+
 
 }
 
