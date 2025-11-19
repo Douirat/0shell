@@ -12,6 +12,7 @@ fn main() {
         io::stdin().read_line(&mut input).unwrap();
 
         let commands = Commands::parse_commands(&input);
+        // println!("Parsed commands size: {:?}", commands.commands.len());
         for cmd in commands.commands {
             // Debug print
             println!("Command name: {}", cmd.name);
@@ -33,6 +34,3 @@ fn main() {
     }
 }
 
-fn ls(){
-    //TODO: Mohammed ammine will create the ls logic here:
-}
