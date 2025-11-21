@@ -1,16 +1,9 @@
- use std::collections::HashMap;
- use nix::unistd::{fork, ForkResult, getpid, execvp};
+use std::env::current_dir;
+use libc::{fork, waitpid, _exit, c_int};
+
 
 pub fn execute_command(commands: &crate::shell::parser::Commands) {
-// since i'm validating the comand i will validate the args as well
     let valid_commands = vec!["echo", "cd", "ls", "pwd", "cat", "cp", "rm", "mv", "mkdir", "exit"];
-    let valid_args: HashMap<&str, Vec<&str>> = [
-        // ("echo", vec!["-n"]),
-        ("ls", vec!["-l", "-a", "-F"]),
-        ("rm", vec!["-r"]),
-    ].iter().cloned().collect();
-
-    
 
     for cmd in &commands.commands {
         if !valid_commands.contains(&cmd.name.as_str()) {
@@ -18,28 +11,42 @@ pub fn execute_command(commands: &crate::shell::parser::Commands) {
             continue;
         }
 
-        if let Some(valid) = valid_args.get(cmd.name.as_str()) {
-            for arg in &cmd.args {
-                if !valid.contains(&arg.as_str()) {
-                    eprintln!("Invalid argument '{}' for command '{}'", arg, cmd.name);
+        unsafe {
+            let pid = fork();
+            if pid == 0 {
+                // CHILD PROCESS: Execute the appropriate command
+                match cmd.name.as_str() {
+                    "echo" => executers::echo(&cmd.args),
+                    "cd" => {
+                        // call the cd function
+                    },
+                    "pwd" => {
+                   // call the pwd function
+                    },
+                    "cat" => {
+                        
+                    // call the cat function
+                    },
+                    "cp" => {
+                        // call the cp function
+                    },
+                    "exit" => {
+                        _exit(0);
+                    },
+                    _ => {
+                        eprintln!("Command '{}' not implemented yet", cmd.name);
+                    }
                 }
+
+                _exit(0); // Exit child after execution
+            } else if pid > 0 {
+                // PARENT PROCESS: Wait for child to finish
+                waitpid(pid, std::ptr::null_mut(), 0);
+            } else {
+                eprintln!("Fork failed");
             }
         }
-
-        match unsafe { fork() } {
-        Ok(ForkResult::Child) => {
-            println!("Child process: PID = {}", getpid());
-            // Child can do something different here
-        }
-        Ok(ForkResult::Parent { child }) => {
-            println!("Parent process: PID = {}, child PID = {}", getpid(), child);
-            // Parent can do something here
-        }
-        Err(err) => {
-            eprintln!("Fork failed: {}", err);
-        }
     }
-}
 
 }
 
