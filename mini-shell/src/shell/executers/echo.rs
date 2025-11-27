@@ -6,6 +6,7 @@ The echo command has several options to customize its output:
 -e - Allow special characters like \n for new lines
 -E - Don't allow special characters (default)
 */
-pub fn echo(args: &[&str]) {
-    
+// shell/executers/echo.rs
+pub fn echo(args: &[String]) {
+    println!("{}", args.join(" "));
 }
