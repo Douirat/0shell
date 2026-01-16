@@ -3,29 +3,28 @@
 version = 4
 
 [[package]]
-name = "errors"
-version = "0.1.0"
-
-[[package]]
 name = "executer"
 version = "0.1.0"
 dependencies = [
  "executers",
+ "types",
 ]
 
 [[package]]
 name = "executers"
 version = "0.1.0"
+dependencies = [
+ "types",
+]
 
 [[package]]
 name = "mini_shell"
 version = "0.1.0"
 dependencies = [
- "errors",
  "executer",
- "parser",
+ "types",
 ]
 
 [[package]]
-name = "parser"
+name = "types"
 version = "0.1.0"
