@@ -12,22 +12,25 @@ fn main() {
             Ok(_) => {
                 match parse(&input) {
                     Ok(command) => {
+                        // Afficher pour déboguer
                         println!("Command: {:?}", command.name);
                         println!("Flags: {:?}", command.flags);
                         println!("Args: {:?}", command.args);
                         
-                        // Vérifier si c'est la commande exit
+                        // Gestion de la commande exit
                         if matches!(command.name, CommandType::Exit) {
                             println!("Goodbye!");
                             break;
                         }
+                        
+                        // TODO: Appeler l'exécuteur ici
                     }
                     Err(e) => {
-                        println!("Parse error: {}", e);
+                        eprintln!("{}", e);
                     }
                 }
             }
-            Err(_) => println!("Error inserting the input"),
-        };
+            Err(_) => eprintln!("Error reading input"),
+        }
     }
 }
