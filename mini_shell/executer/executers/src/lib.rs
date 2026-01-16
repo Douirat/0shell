@@ -1,5 +1,3 @@
-// executers/src/lib.rs
-
 pub mod ls;
 pub mod cat;
 pub mod cp;
