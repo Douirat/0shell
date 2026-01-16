@@ -7,3 +7,4 @@ edition = "2024"
 parser ={path="./parser"}
 errors ={path="./errors"}
 executer ={path="./executer"}
+types = { path = "./types" }

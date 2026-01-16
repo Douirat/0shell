@@ -24,8 +24,16 @@ dependencies = [
  "errors",
  "executer",
  "parser",
+ "types",
 ]
 
 [[package]]
 name = "parser"
+version = "0.1.0"
+dependencies = [
+ "types",
+]
+
+[[package]]
+name = "types"
 version = "0.1.0"
