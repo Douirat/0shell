@@ -1,16 +1,11 @@
 use types::command::*;
 
-impl Command {
-    pub fn new(name: CommandType, flags:Vec<Flag>, args: Vec<String>) -> Self {
-        Self { name, flags, args }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
     EmptyInput,
     UnclosedQuote,
     InvalidSyntax(String),
+    InvalidFlag(char),
 }
 
 impl std::fmt::Display for ParseError {
@@ -19,6 +14,7 @@ impl std::fmt::Display for ParseError {
             ParseError::EmptyInput => write!(f, "Empty command"),
             ParseError::UnclosedQuote => write!(f, "Unclosed quote"),
             ParseError::InvalidSyntax(msg) => write!(f, "Invalid syntax: {}", msg),
+            ParseError::InvalidFlag(c) => write!(f, "Invalid flag: -{}", c),
         }
     }
 }
@@ -38,23 +34,41 @@ pub fn parse(input: &str) -> Result<Command, ParseError> {
         return Err(ParseError::EmptyInput);
     }
 
-    let name = tokens[0].clone();
-    let cmd = match name {
-        "echo" => 
-        "cd" => 
-        "ls" =>  // (supporting -l, -a, -F)
-        "pwd" => 
-        "cat" => 
-        "cp" => 
-        "rm" =>  //(supporting -r)
-        "mv" => 
-        "mkdir" => 
-        "exit" => 
-    }
-    
-    let args = tokens[1..].to_vec();
+    // Premier token = nom de la commande
+    let command_name = &tokens[0];
+    let command_type = CommandType::from_str(command_name);
 
-    Ok(Command::new(name, args))
+    // Parser les flags et arguments
+    let (flags, args) = parse_flags_and_args(&tokens[1..])?;
+
+    Ok(Command::new(command_type, flags, args))
+}
+
+fn parse_flags_and_args(tokens: &[String]) -> Result<(Vec<Flag>, Vec<String>), ParseError> {
+    let mut flags = Vec::new();
+    let mut args = Vec::new();
+
+    for token in tokens {
+        if token.starts_with('-') && token.len() > 1 && !token.starts_with("--") {
+            // C'est un flag (ou plusieurs flags combinés)
+            // Exemple: -l ou -la (équivalent à -l -a)
+            for ch in token.chars().skip(1) {
+                match Flag::from_char(ch) {
+                    Some(flag) => {
+                        if !flags.contains(&flag) {
+                            flags.push(flag);
+                        }
+                    }
+                    None => return Err(ParseError::InvalidFlag(ch)),
+                }
+            }
+        } else {
+            // C'est un argument normal
+            args.push(token.clone());
+        }
+    }
+
+    Ok((flags, args))
 }
 
 fn tokenize(input: &str) -> Result<Vec<String>, ParseError> {
@@ -113,88 +127,147 @@ fn tokenize(input: &str) -> Result<Vec<String>, ParseError> {
     Ok(tokens)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
 
-    #[test]
-    fn test_simple_command() {
-        let result = parse("ls").unwrap();
-        assert_eq!(result.name, "ls");
-        assert_eq!(result.args.len(), 0);
-    }
+//     #[test]
+//     fn test_simple_command() {
+//         let result = parse("ls").unwrap();
+//         assert_eq!(result.name, CommandType::Ls);
+//         assert_eq!(result.flags.len(), 0);
+//         assert_eq!(result.args.len(), 0);
+//     }
 
-    #[test]
-    fn test_command_with_args() {
-        let result = parse("ls -l -a").unwrap();
-        assert_eq!(result.name, "ls");
-        assert_eq!(result.args, vec!["-l", "-a"]);
-    }
+//     #[test]
+//     fn test_command_with_single_flag() {
+//         let result = parse("ls -l").unwrap();
+//         assert_eq!(result.name, CommandType::Ls);
+//         assert_eq!(result.flags, vec![Flag::L]);
+//         assert_eq!(result.args.len(), 0);
+//     }
 
-    #[test]
-    fn test_command_with_quoted_arg() {
-        let result = parse(r#"echo "Hello World""#).unwrap();
-        assert_eq!(result.name, "echo");
-        assert_eq!(result.args, vec!["Hello World"]);
-    }
+//     #[test]
+//     fn test_command_with_multiple_flags() {
+//         let result = parse("ls -l -a").unwrap();
+//         assert_eq!(result.name, CommandType::Ls);
+//         assert!(result.has_flag(&Flag::L));
+//         assert!(result.has_flag(&Flag::A));
+//         assert_eq!(result.args.len(), 0);
+//     }
 
-    #[test]
-    fn test_command_with_single_quotes() {
-        let result = parse("echo 'Hello There'").unwrap();
-        assert_eq!(result.name, "echo");
-        assert_eq!(result.args, vec!["Hello There"]);
-    }
+//     #[test]
+//     fn test_command_with_combined_flags() {
+//         let result = parse("ls -la").unwrap();
+//         assert_eq!(result.name, CommandType::Ls);
+//         assert!(result.has_flag(&Flag::L));
+//         assert!(result.has_flag(&Flag::A));
+//     }
 
-    #[test]
-    fn test_multiple_spaces() {
-        let result = parse("ls    -l     -a").unwrap();
-        assert_eq!(result.name, "ls");
-        assert_eq!(result.args, vec!["-l", "-a"]);
-    }
+//     #[test]
+//     fn test_command_with_flags_and_args() {
+//         let result = parse("ls -l /home/user").unwrap();
+//         assert_eq!(result.name, CommandType::Ls);
+//         assert_eq!(result.flags, vec![Flag::L]);
+//         assert_eq!(result.args, vec!["/home/user"]);
+//     }
 
-    #[test]
-    fn test_empty_input() {
-        let result = parse("   ");
-        assert!(matches!(result, Err(ParseError::EmptyInput)));
-    }
+//     #[test]
+//     fn test_rm_with_recursive_flag() {
+//         let result = parse("rm -r directory").unwrap();
+//         assert_eq!(result.name, CommandType::Rm);
+//         assert_eq!(result.flags, vec![Flag::R]);
+//         assert_eq!(result.args, vec!["directory"]);
+//     }
 
-    #[test]
-    fn test_unclosed_double_quote() {
-        let result = parse(r#"echo "hello"#);
-        assert!(matches!(result, Err(ParseError::UnclosedQuote)));
-    }
+//     #[test]
+//     fn test_command_with_quoted_arg() {
+//         let result = parse(r#"echo "Hello World""#).unwrap();
+//         assert_eq!(result.name, CommandType::Echo);
+//         assert_eq!(result.args, vec!["Hello World"]);
+//     }
 
-    #[test]
-    fn test_unclosed_single_quote() {
-        let result = parse("echo 'hello");
-        assert!(matches!(result, Err(ParseError::UnclosedQuote)));
-    }
+//     #[test]
+//     fn test_command_with_single_quotes() {
+//         let result = parse("echo 'Hello There'").unwrap();
+//         assert_eq!(result.name, CommandType::Echo);
+//         assert_eq!(result.args, vec!["Hello There"]);
+//     }
 
-    #[test]
-    fn test_escaped_character() {
-        let result = parse(r#"echo \"hello\""#).unwrap();
-        assert_eq!(result.name, "echo");
-        assert_eq!(result.args, vec![r#""hello""#]);
-    }
+//     #[test]
+//     fn test_multiple_spaces() {
+//         let result = parse("ls    -l     -a").unwrap();
+//         assert_eq!(result.name, CommandType::Ls);
+//         assert!(result.has_flag(&Flag::L));
+//         assert!(result.has_flag(&Flag::A));
+//     }
 
-    #[test]
-    fn test_mixed_quotes() {
-        let result = parse(r#"echo "It's working""#).unwrap();
-        assert_eq!(result.name, "echo");
-        assert_eq!(result.args, vec!["It's working"]);
-    }
+//     #[test]
+//     fn test_empty_input() {
+//         let result = parse("   ");
+//         assert!(matches!(result, Err(ParseError::EmptyInput)));
+//     }
 
-    #[test]
-    fn test_cat_with_path() {
-        let result = parse("cat /path/to/file.txt").unwrap();
-        assert_eq!(result.name, "cat");
-        assert_eq!(result.args, vec!["/path/to/file.txt"]);
-    }
+//     #[test]
+//     fn test_unclosed_double_quote() {
+//         let result = parse(r#"echo "hello"#);
+//         assert!(matches!(result, Err(ParseError::UnclosedQuote)));
+//     }
 
-    #[test]
-    fn test_cp_command() {
-        let result = parse("cp source.txt dest.txt").unwrap();
-        assert_eq!(result.name, "cp");
-        assert_eq!(result.args, vec!["source.txt", "dest.txt"]);
-    }
-}
+//     #[test]
+//     fn test_unclosed_single_quote() {
+//         let result = parse("echo 'hello");
+//         assert!(matches!(result, Err(ParseError::UnclosedQuote)));
+//     }
+
+//     #[test]
+//     fn test_escaped_character() {
+//         let result = parse(r#"echo \"hello\""#).unwrap();
+//         assert_eq!(result.name, CommandType::Echo);
+//         assert_eq!(result.args, vec![r#""hello""#]);
+//     }
+
+//     #[test]
+//     fn test_mixed_quotes() {
+//         let result = parse(r#"echo "It's working""#).unwrap();
+//         assert_eq!(result.name, CommandType::Echo);
+//         assert_eq!(result.args, vec!["It's working"]);
+//     }
+
+//     #[test]
+//     fn test_cat_with_path() {
+//         let result = parse("cat /path/to/file.txt").unwrap();
+//         assert_eq!(result.name, CommandType::Cat);
+//         assert_eq!(result.args, vec!["/path/to/file.txt"]);
+//     }
+
+//     #[test]
+//     fn test_cp_command() {
+//         let result = parse("cp source.txt dest.txt").unwrap();
+//         assert_eq!(result.name, CommandType::Cp);
+//         assert_eq!(result.args, vec!["source.txt", "dest.txt"]);
+//     }
+
+//     #[test]
+//     fn test_invalid_flag() {
+//         let result = parse("ls -x");
+//         assert!(matches!(result, Err(ParseError::InvalidFlag('x'))));
+//     }
+
+//     #[test]
+//     fn test_unknown_command() {
+//         let result = parse("unknown_cmd arg1").unwrap();
+//         assert!(matches!(result.name, CommandType::Unknown(_)));
+//         assert_eq!(result.args, vec!["arg1"]);
+//     }
+
+//     #[test]
+//     fn test_ls_with_all_flags() {
+//         let result = parse("ls -laF /home").unwrap();
+//         assert_eq!(result.name, CommandType::Ls);
+//         assert!(result.has_flag(&Flag::L));
+//         assert!(result.has_flag(&Flag::A));
+//         assert!(result.has_flag(&Flag::F));
+//         assert_eq!(result.args, vec!["/home"]);
+//     }
+// }

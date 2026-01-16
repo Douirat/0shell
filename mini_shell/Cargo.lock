@@ -22,6 +22,14 @@ name = "mini_shell"
 version = "0.1.0"
 dependencies = [
  "executer",
+ "parser",
+ "types",
+]
+
+[[package]]
+name = "parser"
+version = "0.1.0"
+dependencies = [
  "types",
 ]
 
