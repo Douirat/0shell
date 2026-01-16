@@ -1,5 +1,5 @@
 use types::command::*;
 
-pub fn pwd(command: &Command){
+pub fn rm(command: &Command){
  println!("--> {:?} --> {:?} --> {:?}", command.name, command.flags, command.args);
 }
