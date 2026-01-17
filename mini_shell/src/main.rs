@@ -1,5 +1,6 @@
 use std::io::*;
 use parser::parse;
+use executer::execute;
 use types::command::CommandType;
 
 fn main() {
@@ -12,19 +13,7 @@ fn main() {
             Ok(_) => {
                 match parse(&input) {
                     Ok(commands) => {
-                        println!("Parsed {} command(s):", commands.command.len());
-                        
-                        for (i, command) in commands.command.iter().enumerate() {
-                            println!("  Command #{}: {:?}", i + 1, command.name);
-                            println!("    Flags: {:?}", command.flags);
-                            println!("    Args: {:?}", command.args);
-                            
-                            // Vérifier si c'est exit
-                            if matches!(command.name, CommandType::Exit) {
-                                println!("Goodbye!");
-                                return;
-                            }
-                        }
+                        execute(&commands);
                     }
                     Err(e) => {
                         eprintln!("{}", e);

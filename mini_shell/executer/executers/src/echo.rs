@@ -11,5 +11,6 @@ The echo command has several options to customize its output:
 use types::command::*;
 
 pub fn echo(command: &Command){
- println!("--> {:?} --> {:?} --> {:?}", command.name, command.flags, command.args);
+    let output = command.args.join(" ");
+    println!("{}", output);
 }
