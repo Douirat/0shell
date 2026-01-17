@@ -23,42 +23,114 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-pub fn parse(input: &str) -> Result<Command, ParseError> {
+pub fn parse(input: &str) -> Result<Commands, ParseError> {
     let input = input.trim();
     
     if input.is_empty() {
         return Err(ParseError::EmptyInput);
     }
 
-    let tokens = tokenize(input)?;
+    // Séparer les commandes par ; && || &
+    let command_strings = split_commands(input);
     
-    if tokens.is_empty() {
+    let mut commands = Vec::new();
+    
+    for cmd_str in command_strings {
+        let cmd_str = cmd_str.trim();
+        if cmd_str.is_empty() {
+            continue;
+        }
+        
+        let tokens = tokenize(cmd_str)?;
+        
+        if tokens.is_empty() {
+            continue;
+        }
+
+        let command_type = match tokens[0].to_lowercase().as_str() {
+            "echo" => CommandType::Echo,
+            "cd" => CommandType::Cd,
+            "ls" => CommandType::Ls,
+            "pwd" => CommandType::Pwd,
+            "cat" => CommandType::Cat,
+            "cp" => CommandType::Cp,
+            "rm" => CommandType::Rm,
+            "mv" => CommandType::Mv,
+            "mkdir" => CommandType::Mkdir,
+            "exit" => CommandType::Exit,
+            _ => return Err(ParseError::UnknownCommand(tokens[0].clone())),
+        };
+
+        let (flags, args) = parse_flags_and_args(&tokens[1..])?;
+
+        commands.push(Command {
+            name: command_type,
+            flags,
+            args,
+        });
+    }
+
+    if commands.is_empty() {
         return Err(ParseError::EmptyInput);
     }
 
-    // Conversion string -> CommandType
-    let command_type = match tokens[0].to_lowercase().as_str() {
-        "echo" => CommandType::Echo,
-        "cd" => CommandType::Cd,
-        "ls" => CommandType::Ls,
-        "pwd" => CommandType::Pwd,
-        "cat" => CommandType::Cat,
-        "cp" => CommandType::Cp,
-        "rm" => CommandType::Rm,
-        "mv" => CommandType::Mv,
-        "mkdir" => CommandType::Mkdir,
-        "exit" => CommandType::Exit,
-        _ => return Err(ParseError::UnknownCommand(tokens[0].clone())),
-    };
+    Ok(Commands { command: commands })
+}
 
-    // Parser les flags et arguments
-    let (flags, args) = parse_flags_and_args(&tokens[1..])?;
+// Sépare les commandes par ; && || &
+fn split_commands(input: &str) -> Vec<String> {
+    let mut commands = Vec::new();
+    let mut current_command = String::new();
+    let mut chars = input.chars().peekable();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
 
-    Ok(Command {
-        name: command_type,
-        flags,
-        args,
-    })
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\'' if !in_double_quote => {
+                in_single_quote = !in_single_quote;
+                current_command.push(ch);
+            }
+            '"' if !in_single_quote => {
+                in_double_quote = !in_double_quote;
+                current_command.push(ch);
+            }
+            ';' if !in_single_quote && !in_double_quote => {
+                // Point-virgule : séparateur de commandes
+                commands.push(current_command.clone());
+                current_command.clear();
+            }
+            '&' if !in_single_quote && !in_double_quote => {
+                // & ou && : séparateur
+                if chars.peek() == Some(&'&') {
+                    chars.next(); // Consommer le deuxième &
+                }
+                commands.push(current_command.clone());
+                current_command.clear();
+            }
+            '|' if !in_single_quote && !in_double_quote => {
+                // || : séparateur (mais pas | seul qui serait un pipe)
+                if chars.peek() == Some(&'|') {
+                    chars.next(); // Consommer le deuxième |
+                    commands.push(current_command.clone());
+                    current_command.clear();
+                } else {
+                    // Pipe simple : on l'ignore pour ce projet
+                    current_command.push(ch);
+                }
+            }
+            _ => {
+                current_command.push(ch);
+            }
+        }
+    }
+
+    // Ajouter la dernière commande
+    if !current_command.trim().is_empty() {
+        commands.push(current_command);
+    }
+
+    commands
 }
 
 fn parse_flags_and_args(tokens: &[String]) -> Result<(Vec<Flag>, Vec<String>), ParseError> {
@@ -67,9 +139,7 @@ fn parse_flags_and_args(tokens: &[String]) -> Result<(Vec<Flag>, Vec<String>), P
 
     for token in tokens {
         if token.starts_with('-') && token.len() > 1 && !token.starts_with("--") {
-            // C'est un flag (ou plusieurs flags combinés comme -la)
             for ch in token.chars().skip(1) {
-                // Conversion char -> Flag
                 let flag = match ch {
                     'l' => Flag::L,
                     'a' => Flag::A,
@@ -78,13 +148,11 @@ fn parse_flags_and_args(tokens: &[String]) -> Result<(Vec<Flag>, Vec<String>), P
                     _ => return Err(ParseError::InvalidFlag(ch)),
                 };
                 
-                // Éviter les doublons
                 if !flags.contains(&flag) {
                     flags.push(flag);
                 }
             }
         } else {
-            // C'est un argument normal
             args.push(token.clone());
         }
     }
@@ -140,71 +208,29 @@ fn tokenize(input: &str) -> Result<Vec<String>, ParseError> {
     Ok(tokens)
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[test]
-//     fn test_simple_command() {
-//         let result = parse("ls").unwrap();
-//         assert_eq!(result.name, CommandType::Ls);
-//         assert_eq!(result.flags.len(), 0);
-//         assert_eq!(result.args.len(), 0);
-//     }
+    #[test]
+    fn test_single_command() {
+        let result = parse("ls -la").unwrap();
+        assert_eq!(result.command.len(), 1);
+        assert_eq!(result.command[0].name, CommandType::Ls);
+    }
 
-//     #[test]
-//     fn test_command_with_single_flag() {
-//         let result = parse("ls -l").unwrap();
-//         assert_eq!(result.name, CommandType::Ls);
-//         assert_eq!(result.flags, vec![Flag::L]);
-//     }
+    #[test]
+    fn test_multiple_commands_semicolon() {
+        let result = parse("ls ; pwd ; echo test").unwrap();
+        assert_eq!(result.command.len(), 3);
+        assert_eq!(result.command[0].name, CommandType::Ls);
+        assert_eq!(result.command[1].name, CommandType::Pwd);
+        assert_eq!(result.command[2].name, CommandType::Echo);
+    }
 
-//     #[test]
-//     fn test_command_with_combined_flags() {
-//         let result = parse("ls -la").unwrap();
-//         assert_eq!(result.name, CommandType::Ls);
-//         assert!(result.flags.contains(&Flag::L));
-//         assert!(result.flags.contains(&Flag::A));
-//     }
-
-//     #[test]
-//     fn test_command_with_flags_and_args() {
-//         let result = parse("ls -l /home").unwrap();
-//         assert_eq!(result.name, CommandType::Ls);
-//         assert_eq!(result.flags, vec![Flag::L]);
-//         assert_eq!(result.args, vec!["/home"]);
-//     }
-
-//     #[test]
-//     fn test_rm_with_recursive() {
-//         let result = parse("rm -r folder").unwrap();
-//         assert_eq!(result.name, CommandType::Rm);
-//         assert_eq!(result.flags, vec![Flag::R]);
-//         assert_eq!(result.args, vec!["folder"]);
-//     }
-
-//     #[test]
-//     fn test_echo_with_quotes() {
-//         let result = parse(r#"echo "Hello World""#).unwrap();
-//         assert_eq!(result.name, CommandType::Echo);
-//         assert_eq!(result.args, vec!["Hello World"]);
-//     }
-
-//     #[test]
-//     fn test_invalid_flag() {
-//         let result = parse("ls -x");
-//         assert!(matches!(result, Err(ParseError::InvalidFlag('x'))));
-//     }
-
-//     #[test]
-//     fn test_unknown_command() {
-//         let result = parse("unknown_cmd");
-//         assert!(matches!(result, Err(ParseError::UnknownCommand(_))));
-//     }
-
-//     #[test]
-//     fn test_empty_input() {
-//         let result = parse("   ");
-//         assert!(matches!(result, Err(ParseError::EmptyInput)));
-//     }
-// }
+    #[test]
+    fn test_multiple_commands_and() {
+        let result = parse("ls && pwd").unwrap();
+        assert_eq!(result.command.len(), 2);
+    }
+}
