@@ -11,23 +11,27 @@ fn main() {
         match stdin().read_line(&mut input) {
             Ok(_) => {
                 match parse(&input) {
-                    Ok(command) => {
-                        println!("Command: {:?}", command.name);
-                        println!("Flags: {:?}", command.flags);
-                        println!("Args: {:?}", command.args);
+                    Ok(commands) => {
+                        println!("Parsed {} command(s):", commands.command.len());
                         
-                        // Vérifier si c'est la commande exit
-                        if matches!(command.name, CommandType::Exit) {
-                            println!("Goodbye!");
-                            break;
+                        for (i, command) in commands.command.iter().enumerate() {
+                            println!("  Command #{}: {:?}", i + 1, command.name);
+                            println!("    Flags: {:?}", command.flags);
+                            println!("    Args: {:?}", command.args);
+                            
+                            // Vérifier si c'est exit
+                            if matches!(command.name, CommandType::Exit) {
+                                println!("Goodbye!");
+                                return;
+                            }
                         }
                     }
                     Err(e) => {
-                        println!("Parse error: {}", e);
+                        eprintln!("{}", e);
                     }
                 }
             }
-            Err(_) => println!("Error inserting the input"),
-        };
+            Err(_) => eprintln!("Error reading input"),
+        }
     }
 }
