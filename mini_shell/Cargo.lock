@@ -11,11 +11,15 @@ name = "executer"
 version = "0.1.0"
 dependencies = [
  "executers",
+ "types",
 ]
 
 [[package]]
 name = "executers"
 version = "0.1.0"
+dependencies = [
+ "types",
+]
 
 [[package]]
 name = "mini_shell"
