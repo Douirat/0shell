@@ -2,6 +2,7 @@ use types::command::*;
 use executers::{
     cd::cd,
     ls::ls,
+    echo::echo,
     pwd::pwd,
     cat::cat,
     cp::cp,
@@ -18,6 +19,7 @@ pub fn execute(commands: &Commands) {
         match &command.name {
             CommandType::Cd => cd(command),
             CommandType::Ls => ls(command), //(supporting -l, -a, -F)
+            CommandType::Echo => echo(command),
             CommandType::Pwd =>pwd(command),
             CommandType::Cat => cat(command),
             CommandType::Cp => cp(command),
