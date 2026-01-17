@@ -7,6 +7,9 @@ The echo command has several options to customize its output:
 -E - Don't allow special characters (default)
 */
 // shell/executers/echo.rs
-pub fn echo(args: &[String]) {
-    println!("{}", args.join(" "));
+
+use types::command::*;
+
+pub fn echo(command: &Command){
+ println!("--> {:?} --> {:?} --> {:?}", command.name, command.flags, command.args);
 }

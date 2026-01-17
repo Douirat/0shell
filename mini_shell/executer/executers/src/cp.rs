@@ -5,6 +5,8 @@
      */
 
 
-pub fn cp(src: &str, dst: &str){
+use types::command::*;
 
+pub fn cp(command: &Command){
+ println!("--> {:?} --> {:?} --> {:?}", command.name, command.flags, command.args);
 }

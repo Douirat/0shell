@@ -11,19 +11,20 @@ fn main() {
         match stdin().read_line(&mut input) {
             Ok(_) => {
                 match parse(&input) {
-                    Ok(command) => {
-                        // Afficher pour déboguer
-                        println!("Command: {:?}", command.name);
-                        println!("Flags: {:?}", command.flags);
-                        println!("Args: {:?}", command.args);
+                    Ok(commands) => {
+                        println!("Parsed {} command(s):", commands.command.len());
                         
-                        // Gestion de la commande exit
-                        if matches!(command.name, CommandType::Exit) {
-                            println!("Goodbye!");
-                            break;
+                        for (i, command) in commands.command.iter().enumerate() {
+                            println!("  Command #{}: {:?}", i + 1, command.name);
+                            println!("    Flags: {:?}", command.flags);
+                            println!("    Args: {:?}", command.args);
+                            
+                            // Vérifier si c'est exit
+                            if matches!(command.name, CommandType::Exit) {
+                                println!("Goodbye!");
+                                return;
+                            }
                         }
-                        
-                        // TODO: Appeler l'exécuteur ici
                     }
                     Err(e) => {
                         eprintln!("{}", e);

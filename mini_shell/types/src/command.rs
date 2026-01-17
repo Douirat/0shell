@@ -35,5 +35,3 @@ pub struct Command {
     pub flags:Vec<Flag>,
     pub args: Vec<String>,
 }
-
-
