@@ -23,7 +23,8 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-pub fn parse(input: &str) -> Result<Commands, ParseError> {
+// TODO: Add a lifetime annotatio to parse:
+pub fn parse(state: State, input: &str) -> Result<Commands, ParseError> {
     let input = input.trim();
     
     if input.is_empty() {

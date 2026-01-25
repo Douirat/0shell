@@ -37,8 +37,9 @@ pub struct Commands {
 
 // Command representer: {name: "name eg: ls, echo...", flags:vec![...flags], args:vec![...args]}
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Command {
+pub struct Command<'a> {
     pub name: CommandType,
     pub flags:Vec<Flag>,
     pub args: Vec<String>,
+    pub state: &'a State,
 }
