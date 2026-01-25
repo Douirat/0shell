@@ -55,8 +55,27 @@ use types::command::*;
 # =========================================================
 */
 pub fn ls(command: &Command){
+let flags = handle_ls_flags(&command.flags);
+
  println!("--> {:?} --> {:?} --> {:?}", command.name, command.flags, command.args);
+ println!("{:?}", flags);
+ 
 }
+
+// extract the flags from the command:
+pub fn handle_ls_flags(args: &Vec<Flag> )->Result<LsFlag, String> {
+    let mut flags = LsFlag::default();
+    for flag in args {
+        match flag{
+            Flag::A => flags.list_all = true,
+            Flag::L => flags.long_list = true,
+            Flag::F => flags.list_types = true,
+            Flag::R => todo!(),
+        }
+    }
+    Ok(flags)
+}
+
 
 /*
 # =========================================================

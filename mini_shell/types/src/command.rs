@@ -1,9 +1,9 @@
 // A command enumeration to limit the falling input and redirect the distinction:
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CommandType<T>{
+pub enum CommandType{
 Echo,
 Cd,
-Ls(T), //(supporting -l, -a, -F)
+Ls, //(supporting -l, -a, -F)
 Pwd,
 Cat,
 Cp,
@@ -13,15 +13,15 @@ Mkdir,
 Exit,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LsFlag{
-    list_all: bool, // -a
-    long_list: bool,
-    list_types: bool,
+    pub list_all: bool, // -a
+    pub long_list: bool, // -l
+    pub list_types: bool, // -F
 }
 
 // Enumeration to control the flags of ls and rm;
-#[derive(Debug, Clone, PartialEq, Eq)]
-
+#[derive(Debug, Clone, PartialEq, Eq, )]
 pub enum Flag{
     L, // -l
     A, // -a
