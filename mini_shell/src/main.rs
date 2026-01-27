@@ -1,9 +1,11 @@
 use std::io::*;
 use parser::parse;
 use executer::execute;
-use types::command::CommandType;
+use types::state::*;
+use std::rc::Rc;
 
 fn main() {
+    let state = Rc::new(State::init_state());
     loop {
         print!("$ ");
         let _ = stdout().flush();
@@ -11,7 +13,7 @@ fn main() {
         let mut input = String::new();
         match stdin().read_line(&mut input) {
             Ok(_) => {
-                match parse(&input) {
+                match parse(&state, &input) {
                     Ok(commands) => {
                         execute(&commands);
                     }

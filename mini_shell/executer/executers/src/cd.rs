@@ -1,30 +1,34 @@
-/*
-It allows users to move from the current working directory to another specified directory by providing either an absolute path or a relative path.
-This command is essential for exploring different locations within the Linux environment and managing files efficiently.
-*/
-use types::command::*;
-use std::env;
+use std::path::{Path, PathBuf};
+use types::command::Command;
 
-pub fn cd(command: &Command){
-    let path = if command.args.is_empty() {
-        match  env::var("HOME").or_else(|_| env::var("USERPROFILE")) {
-            Ok(home) => home,
-            Err(_) => {
-                eprintln!("cd: HOME directory not found");
-                return;
-            }
-            
-        }
+pub fn cd(command: &Command) {
+    let state = command.state;
+
+    // Determine the target path
+    let target = if command.args.is_empty() || command.args.get(0).map(|s| s == "~").unwrap_or(false) {
+        state.home.borrow().clone()  // clone the PathBuf from RefCell
     } else {
-        command.args[0].clone()
+        let path_str = command.args.last().unwrap().clone();
+        if Path::new(&path_str).is_absolute() {
+            PathBuf::from(path_str)
+        } else {
+            state.cwd.borrow().join(path_str)
+        }
     };
 
-    match env::set_current_dir(&path) {
-        Ok(_) => {
+    // Canonicalize
+    let normalized: PathBuf = match target.canonicalize() {
+        Ok(path) => path,
+        Err(_) => {
+            eprintln!("cd: No such directory: {}", target.display());
+            return;
+        }
+    };
 
-        }
-        Err(e) => {
-            eprintln!("cd: {}: {}", path, e)
-        }
+    // Update cwd if it's a directory
+    if normalized.is_dir() {
+        *state.cwd.borrow_mut() = normalized; // interior mutability
+    } else {
+        eprintln!("cd: Not a directory: {}", normalized.display());
     }
 }

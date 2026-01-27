@@ -1,4 +1,5 @@
 use types::command::*;
+use std::os::unix::fs::PermissionsExt;
 /*
 # =========================================================
 # Custom LS behavior focused on: -a, -l, -F
@@ -54,13 +55,79 @@ use types::command::*;
 # drwxr-xr-x  3 bdouirat talent 4096 Jan 24 22:55 errors/       # directory
 # =========================================================
 */
-pub fn ls(command: &Command){
-let flags = handle_ls_flags(&command.flags);
+use std::fs;
+use std::path::Path;
+ use std::path::PathBuf;
 
- println!("--> {:?} --> {:?} --> {:?}", command.name, command.flags, command.args);
- println!("{:?}", flags);
- 
+pub fn ls(command: &Command) {
+    let state = &command.state;
+
+    // Determine directory to list
+    let dir = if command.args.is_empty() {
+        state.cwd.borrow().clone() // default to current working directory
+    } else {
+        let path_str = command.args[0].clone();
+        if Path::new(&path_str).is_absolute() {
+            PathBuf::from(path_str)
+        } else {
+            state.cwd.borrow().join(path_str)
+        }
+    };
+
+    // Read directory entries
+    let entries = match fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(err) => {
+            eprintln!("ls: cannot access '{}': {}", dir.display(), err);
+            return;
+        }
+    };
+
+    // Flags
+    let show_all = command.flags.contains(&Flag::A);
+    let long_list = command.flags.contains(&Flag::L);
+    let list_types = command.flags.contains(&Flag::F);
+
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+
+            // Skip hidden files if -a is not set
+            if !show_all && file_name.starts_with(".") {
+                continue;
+            }
+
+            // Long format
+            if long_list {
+                let metadata = match entry.metadata() {
+                    Ok(meta) => meta,
+                    Err(_) => continue,
+                };
+                let file_type = if metadata.is_dir() { "d" } else { "-" };
+                let size = metadata.len();
+                println!("{} {:>8} {}", file_type, size, file_name);
+            } else if list_types {
+                // Append / for directories, * for executables
+                let metadata = match entry.metadata() {
+                    Ok(meta) => meta,
+                    Err(_) => continue,
+                };
+                let suffix = if metadata.is_dir() {
+                    "/"
+                } else if metadata.permissions().mode() & 0o111 != 0 {
+                    "*" // executable
+                } else {
+                    ""
+                };
+                println!("{}{}", file_name, suffix);
+            } else {
+                println!("{}", file_name);
+            }
+        }
+    }
 }
+
 
 // extract the flags from the command:
 pub fn handle_ls_flags(args: &Vec<Flag> )->Result<LsFlag, String> {
