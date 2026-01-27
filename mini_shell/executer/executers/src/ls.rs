@@ -59,7 +59,7 @@ use std::fs;
 use std::path::Path;
  use std::path::PathBuf;
 
-pub fn ls(command: &Command) {
+pub fn ls<'a>(command: &Command) {
     let state = &command.state;
 
     // Determine directory to list
