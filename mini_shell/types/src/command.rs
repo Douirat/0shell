@@ -1,3 +1,5 @@
+use crate::state::State;
+use std::rc::Rc;
 // A command enumeration to limit the falling input and redirect the distinction:
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandType{
@@ -29,10 +31,11 @@ pub enum Flag{
     R, // -r
 }
 
+
 // Packaging commands togather to ease mutiple command handling:
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Commands {
-     pub command: Vec<Command>,
+pub struct Commands<'a> {
+     pub command: Vec<Command<'a>>,
 }
 
 // Command representer: {name: "name eg: ls, echo...", flags:vec![...flags], args:vec![...args]}
@@ -41,5 +44,5 @@ pub struct Command<'a> {
     pub name: CommandType,
     pub flags:Vec<Flag>,
     pub args: Vec<String>,
-    pub state: &'a State,
+    pub state: &'a Rc<State>,
 }

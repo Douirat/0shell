@@ -1,4 +1,6 @@
 use types::command::*;
+use types::state::State;
+use std::rc::Rc;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
@@ -23,8 +25,11 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-// TODO: Add a lifetime annotatio to parse:
-pub fn parse(state: State, input: &str) -> Result<Commands, ParseError> {
+
+
+
+
+pub fn parse<'a>(state: &'a  Rc<State>, input: &str) -> Result<Commands<'a>, ParseError> {
     let input = input.trim();
     
     if input.is_empty() {
@@ -68,6 +73,7 @@ pub fn parse(state: State, input: &str) -> Result<Commands, ParseError> {
             name: command_type,
             flags,
             args,
+            state: &state,
         });
     }
 
