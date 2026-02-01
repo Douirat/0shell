@@ -3,9 +3,10 @@ use types::state::*;
 use std::fs::*;
 use std::ffi::OsString;
 use std::fmt;
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::PermissionsExt;
-// use std::time::{UNIX_EPOCH, Duration}
-// use chrono::{NaiveDateTime, Local};
+use std::time::{UNIX_EPOCH, Duration};
+use users::{get_user_by_uid, get_group_by_gid};
 // use std::os::unix::fs::PermissionsExt;
 // use std::fs::*;
 // use std::path::Path;
@@ -23,20 +24,46 @@ pub struct FileEntry {
     pub name: OsString,
 }
 
+// the file entry displayer.
+impl fmt::Display for FileEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = self.name.to_str().unwrap_or("<invalid utf8>");
+                let user = get_user_by_uid(self.uid)
+            .map(|u| u.name().to_string_lossy().into_owned())
+            .unwrap_or(self.uid.to_string());
+
+        let group = get_group_by_gid(self.gid)
+            .map(|g| g.name().to_string_lossy().into_owned())
+            .unwrap_or(self.gid.to_string());
+        write!(
+            f,
+            "{} {:>2} {:>5} {:>5} {:>8} {} {}",
+            self.permissions,
+            self.links,
+            user,
+            group,
+            self.size,
+            format_time(self.mtime),
+            name,
+        )
+    }
+}
+
 
 impl FileEntry{
 pub fn new()-> FileEntry{
  FileEntry::default()
 }
 
+
 pub fn init(&mut self, entry :DirEntry ){
 self.name = entry.file_name();
 let meta = entry.metadata().unwrap();
-  println!("{:?}", meta);
+//   println!("{:?}", meta);
 let ft = &meta.file_type();
 let file_type = match (ft.is_file(), ft.is_dir(), ft.is_symlink()){
-    (true, false, false) => 'd',
-    (false, true, false) => '-',
+    (true, false, false) => '-',
+    (false, true, false) => 'd',
     (false, false, true) => 'l',
     (_, _, _) => unreachable!(),
 };
@@ -46,10 +73,17 @@ let permissions = meta.permissions().mode();
 let perm_string = perms_to_string(permissions);
 self.permissions = file_type.to_string() + &perm_string;
 
+self.links = meta.nlink();
+
+self.uid = meta.uid();
+self.gid = meta.gid();
+
+self.size = meta.len();
+
+self.mtime = meta.mtime();
 
 
-
-println!("{:?}", self);
+println!("{}", self);
 }
 }
 
@@ -75,9 +109,9 @@ if command.args.is_empty() {
 /* open directory
  for each entry in directory:
      if entry is readable:
-          process entry
+        process entry
      else:
-          report error or skip
+        report error or skip
 */
 
     for entry in dir {
@@ -96,6 +130,8 @@ if command.args.is_empty() {
 //     pub args: Vec<String>,
 //     pub state: &'a Rc<State>,
 // }
+
+// to comprehend.
 fn perms_to_string(mode: u32) -> String {
     let mut s = String::new();
 
@@ -120,4 +156,10 @@ fn perms_to_string(mode: u32) -> String {
     }
 
     s
+}
+
+fn format_time(secs: i64) -> String {
+    let t = UNIX_EPOCH + Duration::from_secs(secs as u64);
+    let datetime: chrono::DateTime<chrono::Local> = t.into();
+    datetime.format("%b %e %H:%M").to_string()
 }
