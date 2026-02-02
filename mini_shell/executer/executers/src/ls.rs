@@ -3,7 +3,6 @@ use types::state::*;
 use std::fs::DirEntry;
 // use std::ffi::OsString;
 use std::fmt;
-use std::os::linux::raw::stat;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::*;
@@ -11,13 +10,15 @@ use std::time::{UNIX_EPOCH, Duration};
 use users::{get_user_by_uid, get_group_by_gid};
 use std::fs::read_dir;
 
-
-
+// file name representer:
+#[derive(Debug, Clone)]
+struct LsNames(Vec<String>);
 
 // create a structure to represent the file:
 #[derive(Debug, Clone, Default)]
 pub struct FileEntry {
     pub permissions: String,
+    pub sign: char,
     pub links: u64,
     pub uid: u32,
     pub gid: u32,
@@ -69,6 +70,15 @@ pub fn get_entry_from_entry(&mut self, entry :DirEntry ) -> Result<Self, std::io
     (_, _, _) => unreachable!(),
 };
 
+let file_sign = match (ft.is_file(), ft.is_dir(), ft.is_symlink()) {
+    (true, false, false) => '*',
+    (false, true, false) => '/',
+    (false, false, true) => '@',
+    _ => unreachable!(),
+};
+
+self.sign = file_sign;
+
 let permissions = meta.permissions().mode();
 let perm_string = perms_to_string(permissions);
 self.permissions = file_type.to_string() + &perm_string;
@@ -103,46 +113,54 @@ pub fn get_entry_from_path(&mut self, path: &PathBuf)-> Result<&mut FileEntry, s
     self.size = size;
     self.mtime = mtime;
 
+     let ft = &meta.file_type();
+    let file_sign = match (ft.is_file(), ft.is_dir(), ft.is_symlink()) {
+    (true, false, false) => '*',
+    (false, true, false) => '/',
+    (false, false, true) => '@',
+    _ => unreachable!(),
+};
+
+self.sign = file_sign;
+
 Ok(self)
 }
 
 }
 
 
-
-
-
 pub fn ls<'a>(command: &Command) {
 // let marker = 0;
 if command.args.is_empty() {
-   let _ = list(&command.state.clone(), ".".to_string());
+        let _ = list(&command.state.clone(), &command.flags, ".".to_string());
 } else {
     for arg in &command.args{
-        let _ = list(&command.state.clone(), arg.clone());
+        let _ = list(&command.state.clone(), &command.flags, arg.clone());
     }
 }
 }
 
-pub fn list(state: &State, arg: String) -> Result<(), Box<dyn std::error::Error>> {
+pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), Box<dyn std::error::Error>> {
     let mut file_enties:Vec<FileEntry> = Vec::new();
-    println!("{}", arg);
+
+       // Get the current file (.):
+       let current = state.cwd.borrow().clone();
+       let mut current_file = FileEntry::new();
+       current_file.get_entry_from_path(&current)?;
+       current_file.name = String::from(".");
+       file_enties.push(current_file);
+       
+       // Get the parent file (..):
+        let parent =  state.cwd.borrow().parent().unwrap().to_path_buf();
+       let mut parent_file = FileEntry::new();
+       parent_file.get_entry_from_path(&parent)?;
+       parent_file.name = String::from("..");
+       file_enties.push(parent_file);
+   
     let target = state.cwd.borrow().join(arg).canonicalize()?;
-    // Get the current file: (.)
-    let current = state.cwd.borrow().clone();
-    let mut current_file = FileEntry::new();
-    current_file.get_entry_from_path(&current)?;
-    current_file.name = String::from(".");
-    file_enties.push(current_file);
-    
-    // Get the parent file: (..)
-     let parent =  state.cwd.borrow().parent().unwrap().to_path_buf();
-    let mut parent_file = FileEntry::new();
-    parent_file.get_entry_from_path(&parent)?;
-    parent_file.name = String::from("..");
-    file_enties.push(parent_file);
 
 
-
+// get the metadata of each directory:
      if let Ok(entries) = read_dir(&target){
         for entry in entries {
          if let Ok(entry) = entry {
@@ -153,14 +171,39 @@ pub fn list(state: &State, arg: String) -> Result<(), Box<dyn std::error::Error>
             }
         }
     }
-    
     // sort the file entries:
     file_enties.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
 
-    // Display all entries:
-    for file in file_enties{
-        println!("{}", file);
+
+
+    if !flags.contains(&Flag::A){
+    file_enties.retain(|f| {
+        !f.name.starts_with('.')
+    });
     }
+
+        if flags.contains(&Flag::F){
+        file_enties = file_enties
+        .into_iter()
+        .map(|mut f| {
+            f.name.push(f.sign.clone());
+            f
+        })
+        .collect();
+    }
+
+    // if the command contains the '-l' flag. 
+    if flags.contains(&Flag::L) {
+        // Display all entries:
+        for file in file_enties{
+            println!("{}", file);
+        }
+    } else {
+        let names:Vec<_> = file_enties.iter().map(|f| f.name.clone()).collect();
+        let file_names = LsNames(names);
+        println!("{}", file_names);
+    }
+    
 
     Ok(())
 }
@@ -197,4 +240,19 @@ fn format_time(secs: i64) -> String {
     let t = UNIX_EPOCH + Duration::from_secs(secs as u64);
     let datetime: chrono::DateTime<chrono::Local> = t.into();
     datetime.format("%b %e %H:%M").to_string()
+}
+
+// the normal displayer for file names without flags:
+
+
+impl fmt::Display for LsNames {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, name) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, " ")?;
+            }
+            write!(f, "{name}")?;
+        }
+        Ok(())
+    }
 }
