@@ -181,14 +181,15 @@ pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), 
     file_enties.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
 
 
-
+    // remove hidden files whne the flag -a is abcent:
     if !flags.contains(&Flag::A){
-    file_enties.retain(|f| {
-        !f.name.starts_with('.')
-    });
+        file_enties.retain(|f| {
+            !f.name.starts_with('.')
+        });
     }
 
-        if flags.contains(&Flag::F){
+    // add the file type when the -F is present:
+    if flags.contains(&Flag::F){
         file_enties = file_enties
         .into_iter()
         .map(|mut f| {
