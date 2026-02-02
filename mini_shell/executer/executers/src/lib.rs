@@ -11,3 +11,5 @@ pub mod rm; // Ben,
 
 pub use echo::echo;
 pub use cd::cd;
+pub use pwd::pwd;
+pub use exit::exit;

@@ -27,7 +27,7 @@ pub fn execute<'a>(commands: &Commands) {
             CommandType::Mv =>mv(command),
             CommandType::Mkdir =>mkdir(command),
             CommandType::Exit => exit(command),
-            _ => println!("error: --> {:?}", command),
+            // _ => println!("error: --> {:?}", command),
         }
     }
 }

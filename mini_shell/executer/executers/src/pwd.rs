@@ -1,5 +1,6 @@
 use types::command::*;
 
 pub fn pwd(command: &Command){
- println!("--> {:?} --> {:?} --> {:?}", command.name, command.flags, command.args);
+    let current_dir = command.state.cwd.borrow();
+    println!("{}", current_dir.display());
 }
