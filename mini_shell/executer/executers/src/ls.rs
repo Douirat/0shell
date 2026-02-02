@@ -1,16 +1,18 @@
 use types::command::*;
 use types::state::*;
-use std::fs::*;
-use std::ffi::OsString;
+use std::fs::DirEntry;
+// use std::ffi::OsString;
 use std::fmt;
+use std::os::linux::raw::stat;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::PermissionsExt;
+use std::path::*;
 use std::time::{UNIX_EPOCH, Duration};
 use users::{get_user_by_uid, get_group_by_gid};
-// use std::os::unix::fs::PermissionsExt;
-// use std::fs::*;
-// use std::path::Path;
-// use std::path::PathBuf;
+use std::fs::read_dir;
+
+
+
 
 // create a structure to represent the file:
 #[derive(Debug, Clone, Default)]
@@ -21,13 +23,12 @@ pub struct FileEntry {
     pub gid: u32,
     pub size: u64,
     pub mtime: i64,
-    pub name: OsString,
+    pub name: String,
 }
 
 // the file entry displayer.
-impl fmt::Display for FileEntry {
+impl fmt::Display for FileEntry{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = self.name.to_str().unwrap_or("<invalid utf8>");
                 let user = get_user_by_uid(self.uid)
             .map(|u| u.name().to_string_lossy().into_owned())
             .unwrap_or(self.uid.to_string());
@@ -44,30 +45,29 @@ impl fmt::Display for FileEntry {
             group,
             self.size,
             format_time(self.mtime),
-            name,
+            self.name,
         )
     }
 }
 
 
 impl FileEntry{
-pub fn new()-> FileEntry{
- FileEntry::default()
+
+pub fn new()->  FileEntry {
+    FileEntry::default()
 }
 
-
-pub fn init(&mut self, entry :DirEntry ){
-self.name = entry.file_name();
-let meta = entry.metadata().unwrap();
-//   println!("{:?}", meta);
-let ft = &meta.file_type();
-let file_type = match (ft.is_file(), ft.is_dir(), ft.is_symlink()){
+pub fn get_entry_from_entry(&mut self, entry :DirEntry ) -> Result<Self, std::io::Error>{
+    self.name = entry.file_name().to_str().unwrap_or("<invalid utf8>").to_string();
+    let meta = entry.metadata()?;
+    //   println!("{:?}", meta);
+    let ft = &meta.file_type();
+    let file_type = match (ft.is_file(), ft.is_dir(), ft.is_symlink()){
     (true, false, false) => '-',
     (false, true, false) => 'd',
     (false, false, true) => 'l',
     (_, _, _) => unreachable!(),
 };
-
 
 let permissions = meta.permissions().mode();
 let perm_string = perms_to_string(permissions);
@@ -81,10 +81,31 @@ self.gid = meta.gid();
 self.size = meta.len();
 
 self.mtime = meta.mtime();
-
-
-println!("{}", self);
+Ok(self.clone())
 }
+
+// file entry from entry:
+pub fn get_entry_from_path(&mut self, path: &PathBuf)-> Result<&mut FileEntry, std::io::Error> {
+   
+    let meta = path.metadata()?;
+
+    let permissions = perms_to_string(meta.mode()); // your helper
+    let links = meta.nlink();
+    let uid = meta.uid();
+    let gid = meta.gid();
+    let size = meta.len();
+    let mtime = meta.mtime(); // or mtime() + nsec for full precision
+
+    self.permissions = permissions;
+    self.links = links;
+    self.uid = uid;
+    self.gid = gid;
+    self.size = size;
+    self.mtime = mtime;
+
+Ok(self)
+}
+
 }
 
 
@@ -102,34 +123,48 @@ if command.args.is_empty() {
 }
 }
 
-  fn list(state: &State, arg: String) -> Result<(), Box<dyn std::error::Error>> {
+pub fn list(state: &State, arg: String) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file_enties:Vec<FileEntry> = Vec::new();
+    println!("{}", arg);
     let target = state.cwd.borrow().join(arg).canonicalize()?;
+    // Get the current file: (.)
+    let current = state.cwd.borrow().clone();
+    let mut current_file = FileEntry::new();
+    current_file.get_entry_from_path(&current)?;
+    current_file.name = String::from(".");
+    file_enties.push(current_file);
+    
+    // Get the parent file: (..)
+     let parent =  state.cwd.borrow().parent().unwrap().to_path_buf();
+    let mut parent_file = FileEntry::new();
+    parent_file.get_entry_from_path(&parent)?;
+    parent_file.name = String::from("..");
+    file_enties.push(parent_file);
 
-    let dir = read_dir(&target)?; // Result<ReadDir> → ReadDir
-/* open directory
- for each entry in directory:
-     if entry is readable:
-        process entry
-     else:
-        report error or skip
-*/
 
-    for entry in dir {
-        let entry = entry?; // Result<DirEntry> → DirEntry
-        let mut f = FileEntry::new();
-        f.init(entry);
+
+     if let Ok(entries) = read_dir(&target){
+        for entry in entries {
+         if let Ok(entry) = entry {
+                // Here, `entry` is a `DirEntry`.
+                let mut f = FileEntry::new();
+                f.get_entry_from_entry(entry)?;
+                file_enties.push(f);
+            }
+        }
+    }
+    
+    // sort the file entries:
+    file_enties.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+
+    // Display all entries:
+    for file in file_enties{
+        println!("{}", file);
     }
 
     Ok(())
 }
 
-// #[derive(Debug, Clone, PartialEq, Eq)]
-// pub struct Command<'a> {
-//     pub name: CommandType,
-//     pub flags:Vec<Flag>,
-//     pub args: Vec<String>,
-//     pub state: &'a Rc<State>,
-// }
 
 // to comprehend.
 fn perms_to_string(mode: u32) -> String {
