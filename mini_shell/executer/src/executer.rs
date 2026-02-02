@@ -1,4 +1,5 @@
 use types::command::*;
+
 use executers::{
     cd::cd,
     ls::ls,
@@ -12,10 +13,9 @@ use executers::{
     exit::exit,
 };
 
-pub fn execute(commands: &Commands) {
+pub fn execute<'a>(commands: &Commands) {
 
     for command in &commands.command {
-      
         match &command.name {
             CommandType::Cd => cd(command),
             CommandType::Ls => ls(command), //(supporting -l, -a, -F)
