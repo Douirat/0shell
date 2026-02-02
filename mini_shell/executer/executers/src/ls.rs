@@ -132,10 +132,16 @@ Ok(self)
 pub fn ls<'a>(command: &Command) {
 // let marker = 0;
 if command.args.is_empty() {
-        let _ = list(&command.state.clone(), &command.flags, ".".to_string());
+        match list(&command.state.clone(), &command.flags, ".".to_string()){
+            Ok(()) => {},
+            Err(_) => println!("No such file or directory"),
+        };
 } else {
     for arg in &command.args{
-        let _ = list(&command.state.clone(), &command.flags, arg.clone());
+        match  list(&command.state.clone(), &command.flags, arg.clone()){
+            Ok(()) => {},
+            Err(_) => println!("No such file or directory: {arg}"),
+        }
     }
 }
 }
