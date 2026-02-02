@@ -8,6 +8,3 @@ pub mod mkdir; // Ben
 pub mod mv; // TODO: Agiel
 pub mod pwd; // TODO: Agiel
 pub mod rm; // Ben,
-
-pub use echo::echo;
-pub use cd::cd;
