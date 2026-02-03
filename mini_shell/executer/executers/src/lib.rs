@@ -6,5 +6,5 @@ pub mod echo; // TODO: Agiel
 pub mod exit; // TODO: Agiel
 pub mod mkdir; // Done
 pub mod mv; // TODO: Agiel
-pub mod pwd; // TODO: Agiel
-pub mod rm; // Ben,
+pub mod pwd; // Ben
+pub mod rm; // done,
