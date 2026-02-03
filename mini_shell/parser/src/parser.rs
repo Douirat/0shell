@@ -152,6 +152,7 @@ fn parse_flags_and_args(tokens: &[String]) -> Result<(Vec<Flag>, Vec<String>), P
                     'a' => Flag::A,
                     'F' => Flag::F,
                     'r' => Flag::R,
+                    'R' => Flag::R,
                     _ => return Err(ParseError::InvalidFlag(ch)),
                 };
                 
