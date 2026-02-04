@@ -5,7 +5,30 @@ Primarily used to read and display the contents of files on the terminal.
 Can concatenate multiple files and display them as a single continuous output.
 */
 use types::command::*;
+use std::fs;
+use std::path::Path;
 
 pub fn cat(command: &Command){
- println!("--> {:?} --> {:?} --> {:?}", command.name, command.flags, command.args);
+    if command.args.is_empty() {
+        println!("cat: missing file operand");
+        return;
+    }
+
+    // Lire et afficher chaque fichier
+    for file_arg in &command.args{
+        let file_path = if Path::new(file_arg).is_absolute() {
+            file_arg.clone()
+        } else {
+            // Résoudre le chemin relatif par rapport au répertoire de travail actuel(cwd)
+            let cwd = command.state.cwd.borrow();
+            cwd.join(file_arg).to_string_lossy().to_string()
+        }
+
+        match fs::read_to_string(&file_path) {
+            Ok(contents) => print!("{}", contents);
+            Err(e) => {
+                eprintln!("cat: {}: {}", file_arg, e);
+            }
+        }
+    }
 }
