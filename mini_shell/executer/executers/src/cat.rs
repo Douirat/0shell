@@ -8,24 +8,23 @@ use types::command::*;
 use std::fs;
 use std::path::Path;
 
-pub fn cat(command: &Command){
+pub fn cat(command: &Command) {
     if command.args.is_empty() {
-        println!("cat: missing file operand");
+        eprintln!("cat: missing file operand");
         return;
     }
 
-    // Lire et afficher chaque fichier
-    for file_arg in &command.args{
+    for file_arg in &command.args {
         let file_path = if Path::new(file_arg).is_absolute() {
             file_arg.clone()
         } else {
-            // Résoudre le chemin relatif par rapport au répertoire de travail actuel(cwd)
+            // Résoudre le chemin relatif par rapport au cwd
             let cwd = command.state.cwd.borrow();
             cwd.join(file_arg).to_string_lossy().to_string()
-        }
+        };
 
         match fs::read_to_string(&file_path) {
-            Ok(contents) => print!("{}", contents);
+            Ok(content) => print!("{}", content),
             Err(e) => {
                 eprintln!("cat: {}: {}", file_arg, e);
             }
