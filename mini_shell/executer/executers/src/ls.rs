@@ -1,101 +1,222 @@
 use types::command::*;
 use types::state::*;
-use std::fs::*;
-use std::ffi::OsString;
+use std::fs::DirEntry;
+// use std::ffi::OsString;
 use std::fmt;
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::PermissionsExt;
-// use std::time::{UNIX_EPOCH, Duration}
-// use chrono::{NaiveDateTime, Local};
-// use std::os::unix::fs::PermissionsExt;
-// use std::fs::*;
-// use std::path::Path;
-// use std::path::PathBuf;
+use std::path::*;
+use std::time::{UNIX_EPOCH, Duration};
+use users::{get_user_by_uid, get_group_by_gid};
+use std::fs::read_dir;
+
+// file name representer:
+#[derive(Debug, Clone)]
+struct LsNames(Vec<String>);
 
 // create a structure to represent the file:
 #[derive(Debug, Clone, Default)]
 pub struct FileEntry {
     pub permissions: String,
+    pub sign: char,
     pub links: u64,
     pub uid: u32,
     pub gid: u32,
     pub size: u64,
     pub mtime: i64,
-    pub name: OsString,
+    pub name: String,
+}
+
+// the file entry displayer.
+impl fmt::Display for FileEntry{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let user = get_user_by_uid(self.uid)
+            .map(|u| u.name().to_string_lossy().into_owned())
+            .unwrap_or(self.uid.to_string());
+
+        let group = get_group_by_gid(self.gid)
+            .map(|g| g.name().to_string_lossy().into_owned())
+            .unwrap_or(self.gid.to_string());
+        write!(
+            f,
+            "{} {:>2} {:>5} {:>5} {:>8} {} {}",
+            self.permissions,
+            self.links,
+            user,
+            group,
+            self.size,
+            format_time(self.mtime),
+            self.name,
+        )
+    }
 }
 
 
 impl FileEntry{
-pub fn new()-> FileEntry{
- FileEntry::default()
+
+pub fn new()->  FileEntry {
+    FileEntry::default()
 }
 
-pub fn init(&mut self, entry :DirEntry ){
-self.name = entry.file_name();
-let meta = entry.metadata().unwrap();
-  println!("{:?}", meta);
-let ft = &meta.file_type();
-let file_type = match (ft.is_file(), ft.is_dir(), ft.is_symlink()){
-    (true, false, false) => 'd',
-    (false, true, false) => '-',
+pub fn get_entry_from_entry(&mut self, entry :DirEntry ) -> Result<Self, std::io::Error>{
+    self.name = entry.file_name().to_str().unwrap_or("<invalid utf8>").to_string();
+    let meta = entry.metadata()?;
+    //   println!("{:?}", meta);
+    let ft = &meta.file_type();
+    let file_type = match (ft.is_file(), ft.is_dir(), ft.is_symlink()){
+    (true, false, false) => '-',
+    (false, true, false) => 'd',
     (false, false, true) => 'l',
     (_, _, _) => unreachable!(),
 };
 
+let file_sign = match (ft.is_file(), ft.is_dir(), ft.is_symlink()) {
+    (true, false, false) => '*',
+    (false, true, false) => '/',
+    (false, false, true) => '@',
+    _ => unreachable!(),
+};
+
+self.sign = file_sign;
 
 let permissions = meta.permissions().mode();
 let perm_string = perms_to_string(permissions);
 self.permissions = file_type.to_string() + &perm_string;
 
+self.links = meta.nlink();
 
+self.uid = meta.uid();
+self.gid = meta.gid();
 
+self.size = meta.len();
 
-println!("{:?}", self);
+self.mtime = meta.mtime();
+Ok(self.clone())
 }
+
+// file entry from entry:
+pub fn get_entry_from_path(&mut self, path: &PathBuf)-> Result<&mut FileEntry, std::io::Error> {
+   
+    let meta = path.metadata()?;
+
+    let permissions = perms_to_string(meta.mode()); // your helper
+    let links = meta.nlink();
+    let uid = meta.uid();
+    let gid = meta.gid();
+    let size = meta.len();
+    let mtime = meta.mtime(); // or mtime() + nsec for full precision
+
+    self.permissions = permissions;
+    self.links = links;
+    self.uid = uid;
+    self.gid = gid;
+    self.size = size;
+    self.mtime = mtime;
+
+     let ft = &meta.file_type();
+    let file_sign = match (ft.is_file(), ft.is_dir(), ft.is_symlink()) {
+    (true, false, false) => '*',
+    (false, true, false) => '/',
+    (false, false, true) => '@',
+    _ => unreachable!(),
+};
+
+self.sign = file_sign;
+
+Ok(self)
 }
 
-
-
+}
 
 
 pub fn ls<'a>(command: &Command) {
 // let marker = 0;
 if command.args.is_empty() {
-   let _ = list(&command.state.clone(), ".".to_string());
+        match list(&command.state.clone(), &command.flags, ".".to_string()){
+            Ok(()) => {},
+            Err(_) => println!("No such file or directory"),
+        };
 } else {
     for arg in &command.args{
-        let _ = list(&command.state.clone(), arg.clone());
+        match  list(&command.state.clone(), &command.flags, arg.clone()){
+            Ok(()) => {},
+            Err(_) => println!("No such file or directory: {arg}"),
+        }
     }
 }
 }
 
-  fn list(state: &State, arg: String) -> Result<(), Box<dyn std::error::Error>> {
+pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file_enties:Vec<FileEntry> = Vec::new();
+
+       // Get the current file (.):
+       let current = state.cwd.borrow().clone();
+       let mut current_file = FileEntry::new();
+       current_file.get_entry_from_path(&current)?;
+       current_file.name = String::from(".");
+       file_enties.push(current_file);
+       
+       // Get the parent file (..):
+        let parent =  state.cwd.borrow().parent().unwrap().to_path_buf();
+       let mut parent_file = FileEntry::new();
+       parent_file.get_entry_from_path(&parent)?;
+       parent_file.name = String::from("..");
+       file_enties.push(parent_file);
+   
     let target = state.cwd.borrow().join(arg).canonicalize()?;
 
-    let dir = read_dir(&target)?; // Result<ReadDir> → ReadDir
-/* open directory
- for each entry in directory:
-     if entry is readable:
-          process entry
-     else:
-          report error or skip
-*/
 
-    for entry in dir {
-        let entry = entry?; // Result<DirEntry> → DirEntry
-        let mut f = FileEntry::new();
-        f.init(entry);
+// get the metadata of each directory:
+     if let Ok(entries) = read_dir(&target){
+        for entry in entries {
+         if let Ok(entry) = entry {
+                // Here, `entry` is a `DirEntry`.
+                let mut f = FileEntry::new();
+                f.get_entry_from_entry(entry)?;
+                file_enties.push(f);
+            }
+        }
     }
+    // sort the file entries:
+    file_enties.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+
+
+    // remove hidden files whne the flag -a is abcent:
+    if !flags.contains(&Flag::A){
+        file_enties.retain(|f| {
+            !f.name.starts_with('.')
+        });
+    }
+
+    // add the file type when the -F is present:
+    if flags.contains(&Flag::F){
+        file_enties = file_enties
+        .into_iter()
+        .map(|mut f| {
+            f.name.push(f.sign.clone());
+            f
+        })
+        .collect();
+    }
+
+    // if the command contains the '-l' flag. 
+    if flags.contains(&Flag::L) {
+        // Display all entries:
+        for file in file_enties{
+            println!("{}", file);
+        }
+    } else {
+        let names:Vec<_> = file_enties.iter().map(|f| f.name.clone()).collect();
+        let file_names = LsNames(names);
+        println!("{}", file_names);
+    }
+    
 
     Ok(())
 }
 
-// #[derive(Debug, Clone, PartialEq, Eq)]
-// pub struct Command<'a> {
-//     pub name: CommandType,
-//     pub flags:Vec<Flag>,
-//     pub args: Vec<String>,
-//     pub state: &'a Rc<State>,
-// }
+
+// to comprehend.
 fn perms_to_string(mode: u32) -> String {
     let mut s = String::new();
 
@@ -121,3 +242,154 @@ fn perms_to_string(mode: u32) -> String {
 
     s
 }
+
+fn format_time(secs: i64) -> String {
+    let t = UNIX_EPOCH + Duration::from_secs(secs as u64);
+    let datetime: chrono::DateTime<chrono::Local> = t.into();
+    datetime.format("%b %e %H:%M").to_string()
+}
+
+// the normal displayer for file names without flags:
+
+
+impl fmt::Display for LsNames {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, name) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, " ")?;
+            }
+            write!(f, "{name}")?;
+        }
+        Ok(())
+    }
+}
+
+
+
+// ls fonctionnelle pour windows, mais sans les options -l, -a, -F (qui sont spécifiques à Unix).
+
+// use types::command::*;
+// use types::state::*;
+// use std::fs::*;
+// use std::ffi::OsString;
+// use std::time::SystemTime;
+
+// #[derive(Debug, Clone, Default)]
+// pub struct FileEntry {
+//     pub permissions: String,
+//     pub links: u64,
+//     pub uid: u32,
+//     pub gid: u32,
+//     pub size: u64,
+//     pub mtime: i64,
+//     pub name: OsString,
+// }
+
+// impl FileEntry {
+//     pub fn new() -> FileEntry {
+//         FileEntry::default()
+//     }
+
+//     pub fn init(&mut self, entry: DirEntry) {
+//         self.name = entry.file_name();
+        
+//         match entry.metadata() {
+//             Ok(meta) => {
+//                 // Déterminer le type de fichier
+//                 let ft = meta.file_type();
+//                 let file_type = if ft.is_dir() {
+//                     'd'
+//                 } else if ft.is_symlink() {
+//                     'l'
+//                 } else if ft.is_file() {
+//                     '-'
+//                 } else {
+//                     '?'
+//                 };
+
+//                 // Permissions simulées pour Windows
+//                 let mut perm_string = String::new();
+//                 let readonly = meta.permissions().readonly();
+                
+//                 // Permissions pour le propriétaire
+//                 perm_string.push(if readonly { 'r' } else { 'r' });
+//                 perm_string.push(if readonly { '-' } else { 'w' });
+//                 perm_string.push('-'); // Exécutable non applicable sur Windows
+                
+//                 // Permissions pour le groupe (simulées)
+//                 perm_string.push('r');
+//                 perm_string.push('-');
+//                 perm_string.push('-');
+                
+//                 // Permissions pour autres (simulées)
+//                 perm_string.push('r');
+//                 perm_string.push('-');
+//                 perm_string.push('-');
+                
+//                 self.permissions = format!("{}{}", file_type, perm_string);
+                
+//                 // Liens (toujours 1 sur Windows)
+//                 self.links = 1;
+                
+//                 // UID/GID (simulés)
+//                 self.uid = 0;
+//                 self.gid = 0;
+                
+//                 // Taille
+//                 self.size = meta.len();
+                
+//                 // Temps de modification
+//                 self.mtime = match meta.modified() {
+//                     Ok(time) => match time.duration_since(SystemTime::UNIX_EPOCH) {
+//                         Ok(duration) => duration.as_secs() as i64,
+//                         Err(_) => 0,
+//                     },
+//                     Err(_) => 0,
+//                 };
+                
+//                 println!("{:?}", self);
+//             }
+//             Err(e) => {
+//                 eprintln!("Erreur lors de la lecture des métadonnées: {}", e);
+//             }
+//         }
+//     }
+// }
+
+// pub fn ls<'a>(command: &Command) {
+//     if command.args.is_empty() {
+//         let _ = list(&command.state.clone(), ".".to_string());
+//     } else {
+//         for arg in &command.args {
+//             let _ = list(&command.state.clone(), arg.clone());
+//         }
+//     }
+// }
+
+// fn list(state: &State, arg: String) -> Result<(), Box<dyn std::error::Error>> {
+//     let target = state.cwd.borrow().join(arg).canonicalize()?;
+    
+//     if target.is_dir() {
+//         let dir = read_dir(&target)?;
+        
+//         for entry in dir {
+//             match entry {
+//                 Ok(entry) => {
+//                     let mut f = FileEntry::new();
+//                     f.init(entry);
+//                 }
+//                 Err(e) => {
+//                     eprintln!("Erreur lors de la lecture de l'entrée: {}", e);
+//                 }
+//             }
+//         }
+//     } else {
+//         // Si ce n'est pas un dossier, afficher le fichier directement
+//         let mut f = FileEntry::new();
+//         let name = target.file_name().unwrap_or_default().to_os_string();
+//         f.name = name.clone();
+//         println!("{:?}", f.name);
+//     }
+    
+//     Ok(())
+// }

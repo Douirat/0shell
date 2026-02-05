@@ -6,7 +6,7 @@ The 'exit' command is a fundamental command in Linux used to exit the current sh
 
 use types::command::*;
 
-pub fn exit(command: &Command){
+pub fn exit(_command: &Command) {
     println!("Exiting the shell. Goodbye!");
     std::process::exit(0);
 }

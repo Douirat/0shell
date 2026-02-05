@@ -36,3 +36,4 @@ pub fn mv(command: &Command){
             eprintln!("mv: cannot move '{}' to '{}': {}", source, destination, e);
         }
     }
+}

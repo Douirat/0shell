@@ -35,10 +35,11 @@ pub fn cp(command: &Command){
 
     // Copier le fichier source vers la destination
     match fs::copy(&source_path, &dest_path) {
-        Ok(bytes) => {
+        Ok(_bytes) => {
 
         }
         Err(e) => {
             eprintln!("cp: cannot copy '{}' to '{}': {}", source, destination, e);
         }
     }
+}
