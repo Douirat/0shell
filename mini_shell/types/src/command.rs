@@ -31,6 +31,14 @@ pub enum Flag{
     R, // -r
 }
 
+// Structure pour les redirections
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Redirection {
+    Output(String),      // > fichier
+    Append(String),      // >> fichier
+    Input(String),       // < fichier
+}
+
 
 // Packaging commands togather to ease mutiple command handling:
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,4 +53,5 @@ pub struct Command<'a> {
     pub flags:Vec<Flag>,
     pub args: Vec<String>,
     pub state: &'a Rc<State>,
+    pub redirections: Vec<Redirection>,
 }

@@ -9,6 +9,7 @@ pub enum ParseError {
     InvalidSyntax(String),
     InvalidFlag(char),
     UnknownCommand(String),
+    InvalidRedirection(String),
 }
 
 impl std::fmt::Display for ParseError {
@@ -19,6 +20,7 @@ impl std::fmt::Display for ParseError {
             ParseError::InvalidSyntax(msg) => write!(f, "Invalid syntax: {}", msg),
             ParseError::InvalidFlag(c) => write!(f, "Invalid flag: -{}", c),
             ParseError::UnknownCommand(cmd) => write!(f, "Command '{}' not found", cmd),
+            ParseError::InvalidRedirection(msg) => write!(f, "Invalid redirection: {}", msg),
         }
     }
 }
@@ -67,13 +69,14 @@ pub fn parse<'a>(state: &'a  Rc<State>, input: &str) -> Result<Commands<'a>, Par
             _ => return Err(ParseError::UnknownCommand(tokens[0].clone())),
         };
 
-        let (flags, args) = parse_flags_and_args(&tokens[1..])?;
+        let (flags, args, redirections) = parse_flags_args_redirections(&tokens[1..])?;
 
         commands.push(Command {
             name: command_type,
             flags,
             args,
             state: &state,
+            redirections,
         });
     }
 
@@ -140,11 +143,38 @@ fn split_commands(input: &str) -> Vec<String> {
     commands
 }
 
-fn parse_flags_and_args(tokens: &[String]) -> Result<(Vec<Flag>, Vec<String>), ParseError> {
+fn parse_flags_args_redirections(tokens: &[String]) -> Result<(Vec<Flag>, Vec<String>, Vec<Redirection>), ParseError> {
     let mut flags = Vec::new();
     let mut args = Vec::new();
-
-    for token in tokens {
+    let mut redirections = Vec::new();
+    
+    let mut i = 0;
+    while i < tokens.len() {
+        let token = &tokens[i];
+        
+        // Détecter les redirections
+        if token == ">" || token == ">>" || token == "<" {
+            if i + 1 >= tokens.len() {
+                return Err(ParseError::InvalidRedirection(
+                    format!("Missing filename after '{}'", token)
+                ));
+            }
+            
+            let filename = tokens[i + 1].clone();
+            
+            let redirection = match token.as_str() {
+                ">" => Redirection::Output(filename),
+                ">>" => Redirection::Append(filename),
+                "<" => Redirection::Input(filename),
+                _ => unreachable!(),
+            };
+            
+            redirections.push(redirection);
+            i += 2; // Sauter le token de redirection ET le nom du fichier
+            continue;
+        }
+        
+        // Gérer les flags
         if token.starts_with('-') && token.len() > 1 && !token.starts_with("--") {
             for ch in token.chars().skip(1) {
                 let flag = match ch {
@@ -152,7 +182,6 @@ fn parse_flags_and_args(tokens: &[String]) -> Result<(Vec<Flag>, Vec<String>), P
                     'a' => Flag::A,
                     'F' => Flag::F,
                     'r' => Flag::R,
-                    'R' => Flag::R,
                     _ => return Err(ParseError::InvalidFlag(ch)),
                 };
                 
@@ -161,11 +190,14 @@ fn parse_flags_and_args(tokens: &[String]) -> Result<(Vec<Flag>, Vec<String>), P
                 }
             }
         } else {
+            // C'est un argument normal
             args.push(token.clone());
         }
+        
+        i += 1;
     }
 
-    Ok((flags, args))
+    Ok((flags, args, redirections))
 }
 
 fn tokenize(input: &str) -> Result<Vec<String>, ParseError> {
@@ -197,6 +229,25 @@ fn tokenize(input: &str) -> Result<Vec<String>, ParseError> {
                 if !current_token.is_empty() {
                     tokens.push(current_token.clone());
                     current_token.clear();
+                }
+            }
+
+            // IMPORTANT : Traiter > et < comme des tokens séparés
+            '>' | '<' if !in_single_quote && !in_double_quote => {
+                if !current_token.is_empty() {
+                    tokens.push(current_token.clone());
+                    current_token.clear();
+                }
+                
+                // Gérer >> et 
+                if ch == '>' && chars.peek() == Some(&'>') {
+                    chars.next();
+                    tokens.push(">>".to_string());
+                } else if ch == '<' && chars.peek() == Some(&'<') {
+                    chars.next();
+                    tokens.push("<<".to_string());
+                } else {
+                    tokens.push(ch.to_string());
                 }
             }
             _ => {
