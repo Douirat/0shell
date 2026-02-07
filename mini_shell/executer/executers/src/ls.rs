@@ -148,7 +148,7 @@ if command.args.is_empty() {
 
 pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), Box<dyn std::error::Error>> {
     let mut file_enties:Vec<FileEntry> = Vec::new();
-
+        println!("state: --> {:?}", state);
        // Get the current file (.):
        let current = state.cwd.borrow().clone();
        let mut current_file = FileEntry::new();

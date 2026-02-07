@@ -28,6 +28,9 @@ pub fn cd(command: &Command) {
     // Update cwd if it's a directory
     if normalized.is_dir() {
         *state.cwd.borrow_mut() = normalized; // interior mutability
+        if let Err(e) = state.update_state() {
+            eprintln!("cd: {}", e);
+        }
     } else {
         eprintln!("cd: Not a directory: {}", normalized.display());
     }

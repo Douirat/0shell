@@ -5,7 +5,11 @@ use types::state::*;
 use std::rc::Rc;
 
 fn main() {
-    let state = Rc::new(State::init_state());
+    let initial_state = match State::init_state(){
+        Ok(s) => s,
+        Err(e) => panic!("{}", e),
+    };
+    let state = Rc::new(initial_state);
     loop {
         print!("$ ");
         let _ = stdout().flush();
