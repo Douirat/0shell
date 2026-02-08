@@ -35,13 +35,10 @@
 use types::command::*;
 use executers::*;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{Write};
 
 pub fn execute(commands: &Commands) {
     for command in &commands.command {
-        // Sauvegarder stdout original
-        let original_stdout = io::stdout();
-        
         // Appliquer les redirections
         let mut output_file: Option<File> = None;
         
@@ -86,10 +83,7 @@ pub fn execute(commands: &Commands) {
         }
         
         // Capturer la sortie si redirection
-        if let Some(mut file) = output_file {
-            // Capturer stdout dans un buffer
-            use std::io::Cursor;
-            
+        if let Some(mut file) = output_file {    
             // On va devoir modifier les commandes pour retourner String au lieu de println!
             // Pour l'instant, rediriger via une approche simplifiée
             
@@ -132,7 +126,7 @@ fn execute_command(command: &Command) {
         CommandType::Rm => rm(command),
         CommandType::Mv => mv(command),
         CommandType::Mkdir => mkdir(command),
-        CommandType::Exit => exit(command),
+        CommandType::Exit => exit(),
     }
 }
 
