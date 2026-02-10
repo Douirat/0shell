@@ -33,6 +33,14 @@ pub fn cp(command: &Command){
         cwd.join(destination)
     };
 
+    // Si la destination est un dossier existant
+    let final_dest = if dest_path.is_dir() {
+        let filename = source_path.file_name().unwrap_or_default();
+        dest_path.join(filename)
+    } else {
+        dest_path
+    };
+
     // Copier le fichier source vers la destination
     match fs::copy(&source_path, &dest_path) {
         Ok(_bytes) => {
