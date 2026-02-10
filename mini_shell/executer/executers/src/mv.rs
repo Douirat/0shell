@@ -27,8 +27,16 @@ pub fn mv(command: &Command){
         cwd.join(destination)
     };
 
+    // si la destination est un dossier existant,
+    let final_dest = if dest_path.is_dir() {
+        let filename = source_path.file_name().unwrap_or_default();
+        dest_path.join(filename)
+    } else {
+        dest_path
+    };
+
     // Déplacer/renommer le fichier source vers la destination
-    match fs::rename(&source_path, &dest_path) {
+    match fs::rename(&source_path, &final_dest) {
         Ok(_) => {
 
         }
