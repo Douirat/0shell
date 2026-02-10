@@ -23,6 +23,7 @@ pub struct FileEntry {
     pub uid: u32,
     pub gid: u32,
     pub size: u64,
+    pub blocks: u64,  // AJOUT : blocs réels pour le calcul du total
     pub mtime: i64,
     pub name: String,
 }
@@ -89,6 +90,7 @@ self.uid = meta.uid();
 self.gid = meta.gid();
 
 self.size = meta.len();
+self.blocks = meta.blocks(); // AJOUT
 
 self.mtime = meta.mtime();
 Ok(self.clone())
@@ -99,7 +101,16 @@ pub fn get_entry_from_path(&mut self, path: &PathBuf)-> Result<&mut FileEntry, s
    
     let meta = path.metadata()?;
 
-    let permissions = perms_to_string(meta.mode()); // your helper
+    // CORRECTION : Ajouter le préfixe du type de fichier ('d', '-', 'l')
+    let ft = &meta.file_type();
+    let file_type = match (ft.is_file(), ft.is_dir(), ft.is_symlink()) {
+        (true, false, false) => '-',
+        (false, true, false) => 'd',
+        (false, false, true) => 'l',
+        _ => '?',
+    };
+
+    let permissions = file_type.to_string() + &perms_to_string(meta.mode()); // CORRECTION : préfixe ajouté
     let links = meta.nlink();
     let uid = meta.uid();
     let gid = meta.gid();
@@ -111,6 +122,7 @@ pub fn get_entry_from_path(&mut self, path: &PathBuf)-> Result<&mut FileEntry, s
     self.uid = uid;
     self.gid = gid;
     self.size = size;
+    self.blocks = meta.blocks(); // AJOUT
     self.mtime = mtime;
 
      let ft = &meta.file_type();
@@ -201,6 +213,13 @@ pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), 
 
     // if the command contains the '-l' flag. 
     if flags.contains(&Flag::L) {
+        // AJOUT : afficher le total en blocs de 1024 octets (st_blocks est en 512, donc on divise par 2)
+        let total_blocks: u64 = file_enties.iter()
+            .filter(|f| f.name != "." && f.name != "..")
+            .map(|f| f.blocks)
+            .sum::<u64>() / 2;
+        println!("total {}", total_blocks);
+
         // Display all entries:
         for file in file_enties{
             println!("{}", file);
