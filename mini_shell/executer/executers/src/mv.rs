@@ -36,7 +36,7 @@ pub fn mv(command: &Command){
     };
 
     // Déplacer/renommer le fichier source vers la destination
-    match fs::rename(&source_path, &dest_path) {
+    match fs::rename(&source_path, &final_dest) {
         Ok(_) => {
 
         }

@@ -42,7 +42,7 @@ pub fn cp(command: &Command){
     };
 
     // Copier le fichier source vers la destination
-    match fs::copy(&source_path, &dest_path) {
+    match fs::copy(&source_path, &final_dest) {
         Ok(_bytes) => {
 
         }
