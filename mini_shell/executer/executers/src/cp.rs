@@ -34,8 +34,15 @@ pub fn cp(command: &Command){
     };
 
     // Copier le fichier source vers la destination
-    match fs::copy(&source_path, &dest_path) {
-        Ok(_bytes) => {
+    let final_dest = if dest_path.is_dir() {
+        let filename = source_path.file_name().unwrap_or_default();
+        dest_path.join(filename)
+    } else {
+        dest_path
+    };
+
+    match fs::copy(&source_path, &final_dest) {
+        Ok(_) => {
 
         }
         Err(e) => {
