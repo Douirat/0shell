@@ -6,7 +6,7 @@ pub fn cd(command: &Command) {
 
     // Determine the target path
     let target = if command.args.is_empty() || command.args.get(0).map(|s| s == "~").unwrap_or(false) {
-        state.home.borrow().clone()  // clone the PathBuf from RefCell
+        state.home.clone()  // clone the PathBuf from RefCell
     } else {
         let path_str = command.args.last().unwrap().clone();
         if Path::new(&path_str).is_absolute() {
