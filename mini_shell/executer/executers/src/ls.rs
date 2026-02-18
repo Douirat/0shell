@@ -1,24 +1,31 @@
 use types::command::*;
 use types::state::*;
 use std::fs::DirEntry;
-// use std::ffi::OsString;
+use std::os::unix::fs::FileTypeExt;
 use std::fmt;
-use std::os::unix::fs::MetadataExt;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::MetadataExt; // uid, gid, nlink, blocks, mtime, rdev, mode
 use std::path::*;
 use std::time::{UNIX_EPOCH, Duration};
 use users::{get_user_by_uid, get_group_by_gid};
 use std::fs::read_dir;
+use term_grid::{Grid, GridOptions, Direction, Filling, Cell};
 
-// file name representer:
+// ── Data structures ───────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone)]
 struct LsNames(Vec<String>);
 
-// create a structure to represent the file:
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FileEntry {
+    /// 10-char permission string including leading type char, e.g. "drwxr-xr-x".
     pub permissions: String,
+    /// '+' if the file has ACL/xattrs, ' ' otherwise.
+    pub acl: char,
+    /// -F indicator char: '/' dir, '@' symlink, '|' fifo, '=' socket, '*' exec, '\0' none.
+    /// Only injected into output when the caller requested -F.
     pub sign: char,
+    /// True when this entry is "." or ".." so we can exclude it from block totals.
+    pub is_dotdot: bool,
     pub links: u64,
     pub uid: u32,
     pub gid: u32,
@@ -26,261 +33,416 @@ pub struct FileEntry {
     pub blocks: u64,
     pub mtime: i64,
     pub name: String,
+    /// Some((major, minor)) for char/block devices; None for everything else.
+    pub rdev: Option<(u64, u64)>,
+    /// Some("target") for symlinks when -l is active; None otherwise.
+    pub link_target: Option<String>,
 }
 
-// the file entry displayer.
-impl fmt::Display for FileEntry{
+impl Default for FileEntry {
+    fn default() -> Self {
+        FileEntry {
+            permissions: String::new(),
+            acl:         ' ',
+            sign:        '\0',
+            is_dotdot:   false,
+            links:       0,
+            uid:         0,
+            gid:         0,
+            size:        0,
+            blocks:      0,
+            mtime:       0,
+            name:        String::new(),
+            rdev:        None,
+            link_target: None,
+        }
+    }
+}
+
+// ── Display (-l format) ───────────────────────────────────────────────────────
+
+impl fmt::Display for FileEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                let user = get_user_by_uid(self.uid)
+        let user = get_user_by_uid(self.uid)
             .map(|u| u.name().to_string_lossy().into_owned())
-            .unwrap_or(self.uid.to_string());
+            .unwrap_or_else(|| self.uid.to_string());
 
         let group = get_group_by_gid(self.gid)
             .map(|g| g.name().to_string_lossy().into_owned())
-            .unwrap_or(self.gid.to_string());
+            .unwrap_or_else(|| self.gid.to_string());
+
+        // char/block devices: show "major, minor" not byte size.
+        // GNU ls formats this as "%3u, %3u" inside the same width as the size column.
+        let size_field = match self.rdev {
+            Some((maj, min)) => format!("{:>3},{:>6}", maj, min),
+            None             => format!("{:>8}", self.size),
+        };
+
+        // Symlinks: "name -> target". No sign — the arrow makes the type obvious.
+        // Non-symlinks use self.name as-is (sign already appended by list() if -F).
+        let name_field = match &self.link_target {
+            Some(target) => format!("{} -> {}", self.name, target),
+            None         => self.name.clone(),
+        };
+
         write!(
             f,
-            "{} {:>2} {:>5} {:>5} {:>8} {} {}",
-            self.permissions,
+            "{}{} {:>3} {:>8} {:>8} {} {} {}",
+            self.permissions, // 10 chars: type + rwxrwxrwx
+            self.acl,         // '+' or ' '
             self.links,
             user,
             group,
-            self.size,
+            size_field,
             format_time(self.mtime),
-            self.name,
+            name_field,
         )
     }
 }
 
+// ── FileEntry construction ────────────────────────────────────────────────────
 
-impl FileEntry{
+impl FileEntry {
+    pub fn new() -> FileEntry {
+        FileEntry::default()
+    }
 
-pub fn new()->  FileEntry {
-    FileEntry::default()
-}
+    /// Build from a `DirEntry` (directory scan).
+    /// Uses `symlink_metadata` so symlinks report as 'l', not their target type.
+    pub fn get_entry_from_entry(&mut self, entry: DirEntry) -> Result<Self, std::io::Error> {
+        self.name = entry.file_name().to_str().unwrap_or("<invalid utf8>").to_string();
+        let path = entry.path();
+        // symlink_metadata = lstat: does NOT follow the symlink.
+        let meta = std::fs::symlink_metadata(&path)?;
+        self.fill_from_meta(&meta, &path)?;
+        Ok(self.clone())
+    }
 
-pub fn get_entry_from_entry(&mut self, entry :DirEntry ) -> Result<Self, std::io::Error>{
-    self.name = entry.file_name().to_str().unwrap_or("<invalid utf8>").to_string();
-    let meta = entry.metadata()?;
-    //   println!("{:?}", meta);
-    let ft = &meta.file_type();
-    let file_type = match (ft.is_file(), ft.is_dir(), ft.is_symlink()){
-    (true, false, false) => '-',
-    (false, true, false) => 'd',
-    (false, false, true) => 'l',
-    (_, _, _) => unreachable!(),
-};
+    /// Build from an explicit path (used for "." and "..").
+    pub fn get_entry_from_path(&mut self, path: &Path) -> Result<&mut FileEntry, std::io::Error> {
+        // symlink_metadata = lstat: correct for "." and ".." which are always dirs.
+        let meta = std::fs::symlink_metadata(path)?;
+        self.fill_from_meta(&meta, path)?;
+        Ok(self)
+    }
 
-let file_sign = match (ft.is_file(), ft.is_dir(), ft.is_symlink()) {
-    (true, false, false) => '*',
-    (false, true, false) => '/',
-    (false, false, true) => '@',
-    _ => unreachable!(),
-};
+    /// Shared metadata extraction — called by both constructors above.
+    fn fill_from_meta(
+        &mut self,
+        meta: &std::fs::Metadata,
+        path: &Path,
+    ) -> Result<(), std::io::Error> {
+        let ft   = meta.file_type();
+        let mode = meta.mode(); // raw Unix mode from MetadataExt
 
-self.sign = file_sign;
+        // ── leading type character (one of: - d l b c p s ?) ─────────────────
+        let type_char = if ft.is_file()         { '-' }
+                   else if ft.is_dir()          { 'd' }
+                   else if ft.is_symlink()      { 'l' }
+                   else if ft.is_block_device() { 'b' }
+                   else if ft.is_char_device()  { 'c' }
+                   else if ft.is_fifo()         { 'p' }
+                   else if ft.is_socket()       { 's' }
+                   else                         { '?' };
 
-let permissions = meta.permissions().mode();
-let perm_string = perms_to_string(permissions);
-self.permissions = file_type.to_string() + &perm_string;
+        // ── -F indicator ────────────────────────────────────────────────────────
+        self.sign = if ft.is_dir()                          { '/' }
+               else if ft.is_symlink()                      { '@' }
+               else if ft.is_fifo()                         { '|' }
+               else if ft.is_socket()                       { '=' }
+               else if ft.is_file() && (mode & 0o111 != 0) { '*' }
+               else                                          { '\0' };
 
-self.links = meta.nlink();
+        // ── permission string ─────────────────────────────────────────────────
+        self.permissions = format!("{}{}", type_char, perms_to_string(mode));
 
-self.uid = meta.uid();
-self.gid = meta.gid();
+        // ── ACL / xattr check ─────────────────────────────────────────────────
+        self.acl = acl_indicator(path);
 
-self.size = meta.len();
-self.blocks = meta.blocks();
+        // ── standard stat fields ──────────────────────────────────────────────
+        self.links  = meta.nlink();
+        self.uid    = meta.uid();
+        self.gid    = meta.gid();
+        self.size   = meta.len();
+        self.blocks = meta.blocks();
+        self.mtime  = meta.mtime();
 
-self.mtime = meta.mtime();
-Ok(self.clone())
-}
-
-// file entry from entry:
-pub fn get_entry_from_path(&mut self, path: &PathBuf)-> Result<&mut FileEntry, std::io::Error> {
-   
-    let meta = path.metadata()?;
-
-    let permissions = perms_to_string(meta.mode()); // your helper
-    let links = meta.nlink();
-    let uid = meta.uid();
-    let gid = meta.gid();
-    let size = meta.len();
-    let mtime = meta.mtime(); // or mtime() + nsec for full precision
-
-    self.permissions = permissions;
-    self.links = links;
-    self.uid = uid;
-    self.gid = gid;
-    self.size = size;
-    self.blocks = meta.blocks();
-    self.mtime = mtime;
-
-     let ft = &meta.file_type();
-    let file_sign = match (ft.is_file(), ft.is_dir(), ft.is_symlink()) {
-    (true, false, false) => '*',
-    (false, true, false) => '/',
-    (false, false, true) => '@',
-    _ => unreachable!(),
-};
-
-self.sign = file_sign;
-
-Ok(self)
-}
-
-}
-
-
-pub fn ls<'a>(command: &Command) {
-// let marker = 0;
-if command.args.is_empty() {
-        match list(&command.state.clone(), &command.flags, ".".to_string()){
-            Ok(()) => {},
-            Err(_) => println!("No such file or directory"),
+        // ── major/minor (char/block devices only) ─────────────────────────────
+        self.rdev = if ft.is_block_device() || ft.is_char_device() {
+            let raw = meta.rdev();
+            Some((dev_major(raw), dev_minor(raw)))
+        } else {
+            None
         };
-} else {
-    for arg in &command.args{
-        match  list(&command.state.clone(), &command.flags, arg.clone()){
-            Ok(()) => {},
-            Err(_) => println!("No such file or directory: {arg}"),
-        }
+
+        // ── symlink target via read_link() ─────────────────────────────────────
+        self.link_target = if ft.is_symlink() {
+            std::fs::read_link(path)
+                .ok()
+                .map(|t| t.to_string_lossy().into_owned())
+        } else {
+            None
+        };
+
+        Ok(())
     }
 }
-}
 
-pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), Box<dyn std::error::Error>> {
-    let mut file_entries:Vec<FileEntry> = Vec::new();
+// ── Public entry point ────────────────────────────────────────────────────────
 
-       // Get the current file (.):
-       let current = state.cwd.borrow().clone();
-       let mut current_file = FileEntry::new();
-       current_file.get_entry_from_path(&current)?;
-       current_file.name = String::from(".");
-       file_entries.push(current_file);
-       
-       if *state.cwd.borrow() != Path::new("/") {
-    // Get the parent file (..):
-        let parent =  state.cwd.borrow().parent().unwrap().to_path_buf();
-       let mut parent_file = FileEntry::new();
-       parent_file.get_entry_from_path(&parent)?;
-       parent_file.name = String::from("..");
-       file_entries.push(parent_file);
-       }
-   
-   
-    let target = state.cwd.borrow().join(arg).canonicalize()?;
-
-
-// get the metadata of each directory:
-     if let Ok(entries) = read_dir(&target){
-        for entry in entries {
-         if let Ok(entry) = entry {
-                // Here, `entry` is a `DirEntry`.
-                let mut f = FileEntry::new();
-                f.get_entry_from_entry(entry)?;
-                file_entries.push(f);
-            }
-        }
-    }
-    // sort the file entries:
-   file_entries.sort_by(|a, b| {
-    fn sort_key(name: &str) -> (char, String) {
-        let mut chars = name.chars();
-
-        match (chars.next(), chars.next()) {
-            (Some('.'), Some(second)) if second.is_alphabetic() => {
-                (second.to_ascii_lowercase(), name.to_ascii_lowercase())
-            }
-            _ => {
-                (name.chars().next().unwrap_or('\0').to_ascii_lowercase(),
-                 name.to_ascii_lowercase())
-            }
-        }
-    }
-
-    sort_key(&a.name).cmp(&sort_key(&b.name))
-});
-
-
-    // remove hidden files whne the flag -a is abcent:
-    if !flags.contains(&Flag::A){
-        file_entries.retain(|f| {
-            !f.name.starts_with('.')
-        });
-    }
-
-    // add the file type when the -F is present:
-    if flags.contains(&Flag::F){
-        file_entries = file_entries
-        .into_iter()
-        .map(|mut f| {
-            f.name.push(f.sign.clone());
-            f
-        })
-        .collect();
-    }
-
-    // if the command contains the '-l' flag. 
-    if flags.contains(&Flag::L) {
-        let total_blocks: u64 = file_entries.iter()
-            .filter(|f| f.name != "." && f.name != "..")
-            .map(|f| f.blocks)
-            .sum::<u64>() / 2;
-        println!("total {}", total_blocks);
-
-        // Display all entries:
-        for file in file_entries{
-            println!("{}", file);
+pub fn ls(command: &Command) {
+    if command.args.is_empty() {
+        if let Err(e) = list(&command.state, &command.flags, ".") {
+            eprintln!("ls: .: {e}");
         }
     } else {
-        let names:Vec<_> = file_entries.iter().map(|f| f.name.clone()).collect();
-        let file_names = LsNames(names);
-        println!("{}", file_names);
+        for arg in &command.args {
+            if let Err(e) = list(&command.state, &command.flags, arg) {
+                eprintln!("ls: {arg}: {e}");
+            }
+        }
     }
-    
+}
+
+// ── list ──────────────────────────────────────────────────────────────────────
+
+pub fn list(
+    state:  &State,
+    flags:  &Vec<Flag>,
+    arg:    &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let show_all = flags.contains(&Flag::A);
+    let long     = flags.contains(&Flag::L);
+    let classify = flags.contains(&Flag::F);
+
+    // Resolve the target directory / file.
+    // We join the raw arg onto the cwd and canonicalize to resolve any ".."
+    // components.  We do NOT canonicalize through symlinks at the final
+    // component — symlink_metadata() called later will see the link itself.
+    let cwd    = state.cwd.borrow().clone();
+    let target = cwd.join(arg);
+    // canonicalize resolves ".." and makes the path absolute, but it also
+    // follows symlinks.  For the common case (pointing at a dir) this is fine.
+    // When the arg IS a symlink we handle it below via symlink_metadata.
+    let target = target.canonicalize()?;
+
+    // ── If target is not a directory, just list that one entry and return ──
+    {
+        let target_meta = std::fs::symlink_metadata(&target)?;
+        if !target_meta.is_dir() {
+            let mut f = FileEntry::new();
+            f.get_entry_from_path(&target)?;
+            f.name = target
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| arg.to_string());
+            // For non-symlinks, append the -F sign to the name directly.
+            if classify && f.sign != '\0' && f.link_target.is_none() {
+                f.name.push(f.sign);
+            }
+            if long {
+                println!("{}", f);
+            } else {
+                println!("{}", f.name);
+            }
+            return Ok(());
+        }
+    }
+
+    // ── Collect directory entries ─────────────────────────────────────────
+    let mut entries: Vec<FileEntry> = Vec::new();
+
+    // "." and ".." are only shown with -a, exactly like GNU ls.
+    if show_all {
+        let mut dot = FileEntry::new();
+        dot.get_entry_from_path(&target)?;
+        dot.name      = ".".to_string();
+        dot.is_dotdot = true;
+        entries.push(dot);
+
+        if target != Path::new("/") {
+            let parent = target.parent().unwrap_or(Path::new("/")).to_path_buf();
+            let mut dotdot = FileEntry::new();
+            dotdot.get_entry_from_path(&parent)?;
+            dotdot.name      = "..".to_string();
+            dotdot.is_dotdot = true;
+            entries.push(dotdot);
+        }
+    }
+
+    // All other entries in the directory.
+    for entry in read_dir(&target)?.flatten() {
+        let mut f = FileEntry::new();
+        f.get_entry_from_entry(entry)?;
+        entries.push(f);
+    }
+
+    // ── Hide dot-files when -a is absent ─────────────────────────────────
+    // (. and .. were never added in this branch, so this only hides .hidden files)
+    if !show_all {
+        entries.retain(|f| !f.name.starts_with('.'));
+    }
+
+    // ── Sort ──────────────────────────────────────────────────────────────
+    // "." always first, ".." always second, then everything else
+    // case-insensitively with a leading dot stripped (GNU ls behaviour).
+    entries.sort_by(|a, b| {
+        let rank = |e: &FileEntry| -> u8 {
+            if !e.is_dotdot { return 2; }
+            if e.name == "." { 0 } else { 1 }
+        };
+        let ra = rank(a);
+        let rb = rank(b);
+        if ra != rb {
+            return ra.cmp(&rb);
+        }
+        // Strip leading dot for sort key so ".bashrc" sorts near "bashrc".
+        let key = |n: &str| n.trim_start_matches('.').to_ascii_lowercase();
+        key(&a.name).cmp(&key(&b.name))
+    });
+
+    // ── Block total (computed BEFORE -F mutates names) ────────────────────
+    // Kernel reports 512-byte blocks; GNU ls shows 1 KiB units → divide by 2.
+    // GNU ls always includes "." blocks in the total regardless of -a, but
+    // never includes "..". When -a is absent "." was never pushed to entries,
+    // so we fetch its block count directly from the target path metadata.
+    // GNU ls total = st_blocks of ALL shown entries (including . and ..) / 2.
+    // Kernel reports 512-byte blocks; ls shows 1 KiB units → divide by 2.
+    // When -a is absent, . and .. are not in entries, so we fetch them directly.
+    let dot_blocks: u64 = if show_all {
+        0 // already in entries, counted below
+    } else {
+        std::fs::symlink_metadata(&target)
+            .map(|m| MetadataExt::blocks(&m))
+            .unwrap_or(0)
+    };
+    let dotdot_blocks: u64 = if show_all {
+        0 // already in entries, counted below
+    } else if target != Path::new("/") {
+        target.parent()
+            .and_then(|p| std::fs::symlink_metadata(p).ok())
+            .map(|m| MetadataExt::blocks(&m))
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let entry_blocks: u64 = entries.iter().map(|f| f.blocks).sum();
+    let total_blocks: u64 = (dot_blocks + dotdot_blocks + entry_blocks) / 2;
+
+    // ── Apply -F sign to non-symlink names ───────────────────────────────
+    // Symlinks are handled entirely inside Display (sign goes before "->").
+    // For everything else we append the sign char directly to the name now.
+    if classify {
+        for f in &mut entries {
+            if f.sign != '\0' && f.link_target.is_none() {
+                f.name.push(f.sign);
+            }
+        }
+    }
+
+    // ── Output ────────────────────────────────────────────────────────────
+    if long {
+        println!("total {}", total_blocks);
+        for f in &entries {
+            println!("{}", f);
+        }
+    } else {
+        let names: Vec<String> = entries.iter().map(|f| f.name.clone()).collect();
+        println!("{}", LsNames(names));
+    }
 
     Ok(())
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-// to comprehend.
+/// Major device number decoded from a raw Linux `rdev` value.
+fn dev_major(rdev: u64) -> u64 {
+    ((rdev >> 8) & 0x000_fff) | ((rdev >> 32) & !0x000_fff)
+}
+
+/// Minor device number decoded from a raw Linux `rdev` value.
+fn dev_minor(rdev: u64) -> u64 {
+    (rdev & 0x0000_00ff) | ((rdev >> 12) & !0x0000_00ff)
+}
+
+/// Converts the Unix mode bits into the 9-character rwxrwxrwx permission string.
+/// Correctly renders setuid (s/S), setgid (s/S), and sticky (t/T) bits.
 fn perms_to_string(mode: u32) -> String {
-    let mut s = String::new();
+    let mut s = String::with_capacity(9);
 
-    let flags = [
-        (0o400, 'r'),
-        (0o200, 'w'),
-        (0o100, 'x'),
-        (0o040, 'r'),
-        (0o020, 'w'),
-        (0o010, 'x'),
-        (0o004, 'r'),
-        (0o002, 'w'),
-        (0o001, 'x'),
-    ];
+    // owner read / write / execute+setuid
+    s.push(if mode & 0o400 != 0 { 'r' } else { '-' });
+    s.push(if mode & 0o200 != 0 { 'w' } else { '-' });
+    s.push(match (mode & 0o100 != 0, mode & 0o4000 != 0) {
+        (true,  true)  => 's', // executable + setuid
+        (false, true)  => 'S', // setuid but NOT executable
+        (true,  false) => 'x',
+        (false, false) => '-',
+    });
 
-    for (bit, ch) in flags {
-        if mode & bit != 0 {
-            s.push(ch);
-        } else {
-            s.push('-');
-        }
-    }
+    // group read / write / execute+setgid
+    s.push(if mode & 0o040 != 0 { 'r' } else { '-' });
+    s.push(if mode & 0o020 != 0 { 'w' } else { '-' });
+    s.push(match (mode & 0o010 != 0, mode & 0o2000 != 0) {
+        (true,  true)  => 's', // executable + setgid
+        (false, true)  => 'S', // setgid but NOT executable
+        (true,  false) => 'x',
+        (false, false) => '-',
+    });
+
+    // other read / write / execute+sticky
+    s.push(if mode & 0o004 != 0 { 'r' } else { '-' });
+    s.push(if mode & 0o002 != 0 { 'w' } else { '-' });
+    s.push(match (mode & 0o001 != 0, mode & 0o1000 != 0) {
+        (true,  true)  => 't', // executable + sticky
+        (false, true)  => 'T', // sticky but NOT executable
+        (true,  false) => 'x',
+        (false, false) => '-',
+    });
 
     s
 }
 
-fn format_time(secs: i64) -> String {
-    let t = UNIX_EPOCH + Duration::from_secs(secs as u64);
-    let datetime: chrono::DateTime<chrono::Local> = t.into();
-    datetime.format("%b %e %H:%M").to_string()
+/// Checks for extended attributes via `llistxattr(2)` (lstat semantics —
+/// does NOT follow symlinks).  Returns '+' if any xattrs exist, ' ' if not.
+///
+/// Add to Cargo.toml:  libc = "0.2"
+fn acl_indicator(path: &Path) -> char {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = match CString::new(path.as_os_str().as_bytes()) {
+        Ok(p)  => p,
+        Err(_) => return ' ',
+    };
+    // Passing a null buffer makes llistxattr return only the required buffer
+    // size.  Any value > 0 means at least one xattr name is present.
+    let size = unsafe {
+        libc::llistxattr(c_path.as_ptr(), std::ptr::null_mut(), 0)
+    };
+    if size > 0 { '+' } else { ' ' }
 }
 
-// the normal displayer for file names without flags:
+/// Formats a Unix timestamp exactly as GNU `ls -l` does:
+///   recent file (within ~6 months)  →  "Mon DD HH:MM"
+///   old / future file               →  "Mon DD  YYYY"
+fn format_time(secs: i64) -> String {
+    let t = UNIX_EPOCH
+        .checked_add(Duration::from_secs(secs.max(0) as u64))
+        .unwrap_or(UNIX_EPOCH);
+    let datetime: chrono::DateTime<chrono::Local> = t.into();
+    let now        = chrono::Local::now();
+    let six_months = chrono::Duration::days(182);
 
+    if datetime < now - six_months || datetime > now + six_months {
+        datetime.format("%b %e  %Y").to_string()
+    } else {
+        datetime.format("%b %e %H:%M").to_string()
+    }
+}
 
-use term_grid::{Grid, GridOptions, Direction, Filling, Cell};
+// ── Grid display (ls without -l) ─────────────────────────────────────────────
 
 impl fmt::Display for LsNames {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -289,7 +451,7 @@ impl fmt::Display for LsNames {
         }
 
         let mut grid = Grid::new(GridOptions {
-            filling: Filling::Spaces(2),
+            filling:   Filling::Spaces(2),
             direction: Direction::TopToBottom,
         });
 
@@ -297,23 +459,24 @@ impl fmt::Display for LsNames {
             grid.add(Cell::from(quote_name(name)));
         }
 
-        let term_width = term_size::dimensions().map(|(w, _)| w).unwrap_or(80);
+        let term_width   = term_size::dimensions().map(|(w, _)| w).unwrap_or(80);
         let max_name_len = self.0.iter().map(|n| quote_name(n).len()).max().unwrap_or(1);
-        let num_cols = ((term_width + 2) / (max_name_len + 2)).max(1);
+        let num_cols     = ((term_width + 2) / (max_name_len + 2)).max(1);
 
         write!(f, "{}", grid.fit_into_columns(num_cols))
     }
 }
 
+/// Quotes a filename containing spaces or quote characters,
+/// matching GNU coreutils ls quoting behaviour.
 fn quote_name(name: &str) -> String {
-    let has_single = name.contains('\'');
     let has_space  = name.contains(' ');
+    let has_single = name.contains('\'');
     let has_double = name.contains('"');
 
     if !has_space && !has_single && !has_double {
         return name.to_string();
     }
-
     if has_single && !has_double {
         format!("\"{}\"", name)
     } else {
