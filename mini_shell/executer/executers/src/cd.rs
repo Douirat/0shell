@@ -6,6 +6,11 @@ pub fn cd(command: &Command) {
 
     if !command.args.is_empty(){
         let arg = command.args[0].clone();
+
+        if arg == "." {
+            return
+        }
+        
         if   let Some(current_path) = state.cwd.borrow().to_str(){
            if current_path == "/home"{ 
             if &arg == ".."{
