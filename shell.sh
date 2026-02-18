@@ -1,1 +1,1 @@
-cd mini-shell && cargo run
+cd ./mini_shell && cargo run

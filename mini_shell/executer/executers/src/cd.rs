@@ -2,7 +2,24 @@ use std::path::{Path, PathBuf};
 use types::command::Command;
 
 pub fn cd(command: &Command) {
-    let state = command.state;
+    let state = command.state.clone();
+
+    if !command.args.is_empty(){
+        let arg = command.args[0].clone();
+        if   let Some(current_path) = state.cwd.borrow().to_str(){
+           if current_path == "/home"{ 
+            if &arg == ".."{
+               return
+           }
+           
+           if arg != state.user && &arg != ".." {
+               println!("cd: permission denied: {}", arg);
+               return
+            } 
+            }}
+    }
+
+
 
     // Determine the target path
     let target = if command.args.is_empty() || command.args.get(0).map(|s| s == "~").unwrap_or(false) {
