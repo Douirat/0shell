@@ -11,19 +11,16 @@ pub fn cd(command: &Command) {
             return
         }
         
-        if   let Some(current_path) = state.cwd.borrow().to_str(){
-           if current_path == "/home"{ 
-            if &arg == ".."{
-               return
-           }
-
-           println!("... {:?}", &command.args);
-           
-           if arg != state.user && arg != "./".to_owned() + &state.user{
-               println!("cd: permission denied: {}", arg);
-               return
-            } 
-        }}
+if let Some(current_path) = state.cwd.borrow().to_str() {
+    if current_path == "/home" {
+        if arg.starts_with("/") || arg.starts_with(".."){
+            // Allow absolute paths like /
+        } else if arg != state.user && arg != format!("./{}", state.user) {
+            println!("cd: permission denied: {}", arg);
+            return;
+        }
+    }
+}
     }
 
 
