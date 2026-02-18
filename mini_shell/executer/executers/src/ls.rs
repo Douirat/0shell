@@ -156,12 +156,15 @@ pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), 
        current_file.name = String::from(".");
        file_entries.push(current_file);
        
-       // Get the parent file (..):
+       if *state.cwd.borrow() != Path::new("/") {
+    // Get the parent file (..):
         let parent =  state.cwd.borrow().parent().unwrap().to_path_buf();
        let mut parent_file = FileEntry::new();
        parent_file.get_entry_from_path(&parent)?;
        parent_file.name = String::from("..");
        file_entries.push(parent_file);
+       }
+   
    
     let target = state.cwd.borrow().join(arg).canonicalize()?;
 
