@@ -9,7 +9,6 @@ use std::path::*;
 use std::time::{UNIX_EPOCH, Duration};
 use users::{get_user_by_uid, get_group_by_gid};
 use std::fs::read_dir;
-use std::cmp::Ordering;
 
 // file name representer:
 #[derive(Debug, Clone)]
@@ -179,17 +178,22 @@ pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), 
         }
     }
     // sort the file entries:
-  file_entries.sort_by(|a, b| {
-    match (a.name.as_str(), b.name.as_str()) {
-        (".", ".") => Ordering::Equal,
-        (".", _) => Ordering::Less,
-        (_, ".") => Ordering::Greater,
-        ("..", "..") => Ordering::Equal,
-        ("..", _) => Ordering::Less,
-        (_, "..") => Ordering::Greater,
+   file_entries.sort_by(|a, b| {
+    fn sort_key(name: &str) -> (char, String) {
+        let mut chars = name.chars();
 
-        _ => a.name.cmp(&b.name),
+        match (chars.next(), chars.next()) {
+            (Some('.'), Some(second)) if second.is_alphabetic() => {
+                (second.to_ascii_lowercase(), name.to_ascii_lowercase())
+            }
+            _ => {
+                (name.chars().next().unwrap_or('\0').to_ascii_lowercase(),
+                 name.to_ascii_lowercase())
+            }
+        }
     }
+
+    sort_key(&a.name).cmp(&sort_key(&b.name))
 });
 
 
