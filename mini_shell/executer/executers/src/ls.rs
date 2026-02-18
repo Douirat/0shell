@@ -9,6 +9,7 @@ use std::path::*;
 use std::time::{UNIX_EPOCH, Duration};
 use users::{get_user_by_uid, get_group_by_gid};
 use std::fs::read_dir;
+use std::cmp::Ordering;
 
 // file name representer:
 #[derive(Debug, Clone)]
@@ -147,21 +148,21 @@ if command.args.is_empty() {
 }
 
 pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), Box<dyn std::error::Error>> {
-    let mut file_enties:Vec<FileEntry> = Vec::new();
+    let mut file_entries:Vec<FileEntry> = Vec::new();
 
        // Get the current file (.):
        let current = state.cwd.borrow().clone();
        let mut current_file = FileEntry::new();
        current_file.get_entry_from_path(&current)?;
        current_file.name = String::from(".");
-       file_enties.push(current_file);
+       file_entries.push(current_file);
        
        // Get the parent file (..):
         let parent =  state.cwd.borrow().parent().unwrap().to_path_buf();
        let mut parent_file = FileEntry::new();
        parent_file.get_entry_from_path(&parent)?;
        parent_file.name = String::from("..");
-       file_enties.push(parent_file);
+       file_entries.push(parent_file);
    
     let target = state.cwd.borrow().join(arg).canonicalize()?;
 
@@ -173,24 +174,35 @@ pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), 
                 // Here, `entry` is a `DirEntry`.
                 let mut f = FileEntry::new();
                 f.get_entry_from_entry(entry)?;
-                file_enties.push(f);
+                file_entries.push(f);
             }
         }
     }
     // sort the file entries:
-    file_enties.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+  file_entries.sort_by(|a, b| {
+    match (a.name.as_str(), b.name.as_str()) {
+        (".", ".") => Ordering::Equal,
+        (".", _) => Ordering::Less,
+        (_, ".") => Ordering::Greater,
+        ("..", "..") => Ordering::Equal,
+        ("..", _) => Ordering::Less,
+        (_, "..") => Ordering::Greater,
+
+        _ => a.name.cmp(&b.name),
+    }
+});
 
 
     // remove hidden files whne the flag -a is abcent:
     if !flags.contains(&Flag::A){
-        file_enties.retain(|f| {
+        file_entries.retain(|f| {
             !f.name.starts_with('.')
         });
     }
 
     // add the file type when the -F is present:
     if flags.contains(&Flag::F){
-        file_enties = file_enties
+        file_entries = file_entries
         .into_iter()
         .map(|mut f| {
             f.name.push(f.sign.clone());
@@ -202,11 +214,11 @@ pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), 
     // if the command contains the '-l' flag. 
     if flags.contains(&Flag::L) {
         // Display all entries:
-        for file in file_enties{
+        for file in file_entries{
             println!("{}", file);
         }
     } else {
-        let names:Vec<_> = file_enties.iter().map(|f| f.name.clone()).collect();
+        let names:Vec<_> = file_entries.iter().map(|f| f.name.clone()).collect();
         let file_names = LsNames(names);
         println!("{}", file_names);
     }
