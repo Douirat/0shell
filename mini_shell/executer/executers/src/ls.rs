@@ -280,14 +280,43 @@ fn format_time(secs: i64) -> String {
 // the normal displayer for file names without flags:
 
 
+use term_grid::{Grid, GridOptions, Direction, Filling, Cell};
+
 impl fmt::Display for LsNames {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (i, name) in self.0.iter().enumerate() {
-            if i > 0 {
-                write!(f, " ")?;
-            }
-            write!(f, "{name}")?;
+        if self.0.is_empty() {
+            return Ok(());
         }
-        Ok(())
+
+        let mut grid = Grid::new(GridOptions {
+            filling: Filling::Spaces(2),
+            direction: Direction::TopToBottom,
+        });
+
+        for name in &self.0 {
+            grid.add(Cell::from(quote_name(name)));
+        }
+
+        let term_width = term_size::dimensions().map(|(w, _)| w).unwrap_or(80);
+        let max_name_len = self.0.iter().map(|n| quote_name(n).len()).max().unwrap_or(1);
+        let num_cols = ((term_width + 2) / (max_name_len + 2)).max(1);
+
+        write!(f, "{}", grid.fit_into_columns(num_cols))
+    }
+}
+
+fn quote_name(name: &str) -> String {
+    let has_single = name.contains('\'');
+    let has_space  = name.contains(' ');
+    let has_double = name.contains('"');
+
+    if !has_space && !has_single && !has_double {
+        return name.to_string();
+    }
+
+    if has_single && !has_double {
+        format!("\"{}\"", name)
+    } else {
+        format!("'{}'", name)
     }
 }
