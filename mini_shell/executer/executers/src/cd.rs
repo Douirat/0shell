@@ -18,11 +18,6 @@ pub fn cd(command: &Command) {
                println!("cd: permission denied: {}", arg);
                return
             } 
-        //  if arg != "./".to_owned() + &state.user{
-        //       println!("cd: permission denied: {}", arg);
-        //        return
-        // }
-
         }}
     }
 
