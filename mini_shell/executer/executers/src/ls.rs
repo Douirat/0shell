@@ -23,6 +23,7 @@ pub struct FileEntry {
     pub uid: u32,
     pub gid: u32,
     pub size: u64,
+    pub blocks: u64,
     pub mtime: i64,
     pub name: String,
 }
@@ -89,6 +90,7 @@ self.uid = meta.uid();
 self.gid = meta.gid();
 
 self.size = meta.len();
+self.blocks = meta.blocks();
 
 self.mtime = meta.mtime();
 Ok(self.clone())
@@ -111,6 +113,7 @@ pub fn get_entry_from_path(&mut self, path: &PathBuf)-> Result<&mut FileEntry, s
     self.uid = uid;
     self.gid = gid;
     self.size = size;
+    self.blocks = meta.blocks();
     self.mtime = mtime;
 
      let ft = &meta.file_type();
@@ -220,6 +223,12 @@ pub fn list<'a>(state: &'a State,flags: &Vec<Flag>,  arg: String) -> Result<(), 
 
     // if the command contains the '-l' flag. 
     if flags.contains(&Flag::L) {
+        let total_blocks: u64 = file_entries.iter()
+            .filter(|f| f.name != "." && f.name != "..")
+            .map(|f| f.blocks)
+            .sum::<u64>() / 2;
+        println!("total {}", total_blocks);
+
         // Display all entries:
         for file in file_entries{
             println!("{}", file);
