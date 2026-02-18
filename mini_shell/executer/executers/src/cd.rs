@@ -11,12 +11,19 @@ pub fn cd(command: &Command) {
             if &arg == ".."{
                return
            }
+
+           println!("... {:?}", &command.args);
            
-           if arg != state.user && &arg != ".." {
+           if arg != state.user && arg != "./".to_owned() + &state.user{
                println!("cd: permission denied: {}", arg);
                return
             } 
-            }}
+        //  if arg != "./".to_owned() + &state.user{
+        //       println!("cd: permission denied: {}", arg);
+        //        return
+        // }
+
+        }}
     }
 
 
