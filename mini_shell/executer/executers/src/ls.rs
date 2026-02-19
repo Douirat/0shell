@@ -191,6 +191,9 @@ impl FileEntry {
 // ── Public entry point ────────────────────────────────────────────────────────
 
 pub fn ls(command: &Command) {
+    // Initialise the C locale from the environment so strcoll() sorts
+    // exactly like GNU ls (respects LC_COLLATE / LANG).
+    init_locale();
     if command.args.is_empty() {
         if let Err(e) = list(&command.state, &command.flags, ".") {
             eprintln!("ls: .: {e}");
@@ -284,8 +287,9 @@ pub fn list(
     }
 
     // ── Sort ──────────────────────────────────────────────────────────────
-    // "." always first, ".." always second, then everything else
-    // case-insensitively with a leading dot stripped (GNU ls behaviour).
+    // "." always first, ".." always second.
+    // Everything else sorted with strcoll(3) — the same function GNU ls uses —
+    // which respects the process locale (LC_COLLATE) exactly as the shell does.
     entries.sort_by(|a, b| {
         let rank = |e: &FileEntry| -> u8 {
             if !e.is_dotdot { return 2; }
@@ -296,9 +300,7 @@ pub fn list(
         if ra != rb {
             return ra.cmp(&rb);
         }
-        // Strip leading dot for sort key so ".bashrc" sorts near "bashrc".
-        let key = |n: &str| n.trim_start_matches('.').to_ascii_lowercase();
-        key(&a.name).cmp(&key(&b.name))
+        strcoll(&a.name, &b.name)
     });
 
     // ── Block total (computed BEFORE -F mutates names) ────────────────────
@@ -355,6 +357,34 @@ pub fn list(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Compares two filenames using the locale-aware strcoll(3), exactly as GNU ls does.
+/// Falls back to plain byte comparison if either name contains a null byte.
+fn strcoll(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::ffi::CString;
+    let ca = CString::new(a.as_bytes());
+    let cb = CString::new(b.as_bytes());
+    match (ca, cb) {
+        (Ok(ca), Ok(cb)) => {
+            let r = unsafe { libc::strcoll(ca.as_ptr(), cb.as_ptr()) };
+            r.cmp(&0)
+        }
+        _ => a.cmp(b),
+    }
+}
+
+/// Must be called once at program startup (in main) so that strcoll() sorts
+/// filenames the same way GNU ls does — using the user's system locale.
+///
+///     use executers::ls::init_locale;
+///     init_locale();
+pub fn init_locale() {
+    unsafe {
+        // "" tells setlocale to read LC_ALL/LC_COLLATE/LANG from the environment,
+        // exactly what GNU ls does at startup.
+        libc::setlocale(libc::LC_ALL, c"".as_ptr());
+    }
+}
 
 /// Major device number decoded from a raw Linux `rdev` value.
 fn dev_major(rdev: u64) -> u64 {
@@ -455,31 +485,59 @@ impl fmt::Display for LsNames {
             direction: Direction::TopToBottom,
         });
 
+        // Only apply shell quoting when stdout is a TTY — same as GNU ls.
+        let is_tty = unsafe { libc::isatty(libc::STDOUT_FILENO) } == 1;
+        let display_name = |n: &str| -> String {
+            if is_tty { shell_quote(n) } else { n.to_string() }
+        };
+
         for name in &self.0 {
-            grid.add(Cell::from(quote_name(name)));
+            grid.add(Cell::from(display_name(name)));
         }
 
         let term_width   = term_size::dimensions().map(|(w, _)| w).unwrap_or(80);
-        let max_name_len = self.0.iter().map(|n| quote_name(n).len()).max().unwrap_or(1);
+        let max_name_len = self.0.iter().map(|n| display_name(n).len()).max().unwrap_or(1);
         let num_cols     = ((term_width + 2) / (max_name_len + 2)).max(1);
 
         write!(f, "{}", grid.fit_into_columns(num_cols))
     }
 }
 
-/// Quotes a filename containing spaces or quote characters,
-/// matching GNU coreutils ls quoting behaviour.
-fn quote_name(name: &str) -> String {
-    let has_space  = name.contains(' ');
-    let has_single = name.contains('\'');
-    let has_double = name.contains('"');
+/// Quotes a filename the way GNU ls shell-quoting style does on a TTY:
+///   - no special chars  →  as-is
+///   - special chars     →  single-quoted, with ' escaped as '\''
+///   - non-printable     →  appended as $'\n' after the closing quote
+fn shell_quote(name: &str) -> String {
+    let needs_quotes = name.chars().any(|c| {
+        matches!(c, ' ' | '\t' | '\n' | '\r' | '\'' | '"' | '\\'
+                  | '!' | '#' | '$' | '&' | '(' | ')' | '*' | ';'
+                  | '<' | '>' | '?' | '[' | ']' | '^' | '`' | '{' | '|' | '}' | '~')
+        || (c as u32) < 32 || c == '\x7f'
+    });
 
-    if !has_space && !has_single && !has_double {
+    if !needs_quotes {
         return name.to_string();
     }
-    if has_single && !has_double {
-        format!("\"{}\"", name)
-    } else {
-        format!("'{}'", name)
+
+    let mut s      = String::from("'");
+    let mut suffix = String::new();
+
+    for c in name.chars() {
+        match c {
+            // Each single-quote becomes: '\''
+            // (close quote, backslash-quote, reopen quote)
+            '\'' => s.push_str("'\\''"),
+            '\n' => suffix.push_str("$'\\n'"),
+            '\r' => suffix.push_str("$'\\r'"),
+            '\t' => suffix.push_str("$'\\t'"),
+            c if (c as u32) < 32 || c == '\x7f' => {
+                suffix.push_str(&format!("$'\\x{:02x}'", c as u32));
+            }
+            c => s.push(c),
+        }
     }
+
+    s.push('\'');
+    s.push_str(&suffix);
+    s
 }
