@@ -1,1 +1,0 @@
-cd ./mini_shell && cargo run
