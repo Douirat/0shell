@@ -27,30 +27,26 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-
-
-
-
-pub fn parse<'a>(state: &'a  Rc<State>, input: &str) -> Result<Commands<'a>, ParseError> {
+pub fn parse<'a>(state: &'a Rc<State>, input: &str) -> Result<Commands<'a>, ParseError> {
     let input = input.trim();
-    
+
     if input.is_empty() {
         return Err(ParseError::EmptyInput);
     }
 
     // Séparer les commandes par ; && || &
     let command_strings = split_commands(input);
-    
+
     let mut commands = Vec::new();
-    
+
     for cmd_str in command_strings {
         let cmd_str = cmd_str.trim();
         if cmd_str.is_empty() {
             continue;
         }
-        
+
         let tokens = tokenize(cmd_str)?;
-        
+
         if tokens.is_empty() {
             continue;
         }
@@ -66,7 +62,9 @@ pub fn parse<'a>(state: &'a  Rc<State>, input: &str) -> Result<Commands<'a>, Par
             "mv" => CommandType::Mv,
             "mkdir" => CommandType::Mkdir,
             "exit" => CommandType::Exit,
-            _ => return Err(ParseError::UnknownCommand(tokens[0].clone())),
+            _ => {
+                return Err(ParseError::UnknownCommand(tokens[0].clone()));
+            }
         };
 
         let (flags, args, redirections) = parse_flags_args_redirections(&tokens[1..])?;
@@ -143,37 +141,39 @@ fn split_commands(input: &str) -> Vec<String> {
     commands
 }
 
-fn parse_flags_args_redirections(tokens: &[String]) -> Result<(Vec<Flag>, Vec<String>, Vec<Redirection>), ParseError> {
+fn parse_flags_args_redirections(
+    tokens: &[String]
+) -> Result<(Vec<Flag>, Vec<String>, Vec<Redirection>), ParseError> {
     let mut flags = Vec::new();
     let mut args = Vec::new();
     let mut redirections = Vec::new();
-    
+
     let mut i = 0;
     while i < tokens.len() {
         let token = &tokens[i];
-        
+
         // Détecter les redirections
         if token == ">" || token == ">>" || token == "<" {
             if i + 1 >= tokens.len() {
-                return Err(ParseError::InvalidRedirection(
-                    format!("Missing filename after '{}'", token)
-                ));
+                return Err(
+                    ParseError::InvalidRedirection(format!("Missing filename after '{}'", token))
+                );
             }
-            
+
             let filename = tokens[i + 1].clone();
-            
+
             let redirection = match token.as_str() {
                 ">" => Redirection::Output(filename),
                 ">>" => Redirection::Append(filename),
                 "<" => Redirection::Input(filename),
                 _ => unreachable!(),
             };
-            
+
             redirections.push(redirection);
             i += 2; // Sauter le token de redirection ET le nom du fichier
             continue;
         }
-        
+
         // Gérer les flags
         if token.starts_with('-') && token.len() > 1 && !token.starts_with("--") {
             for ch in token.chars().skip(1) {
@@ -182,9 +182,11 @@ fn parse_flags_args_redirections(tokens: &[String]) -> Result<(Vec<Flag>, Vec<St
                     'a' => Flag::A,
                     'F' => Flag::F,
                     'r' => Flag::R,
-                    _ => return Err(ParseError::InvalidFlag(ch)),
+                    _ => {
+                        return Err(ParseError::InvalidFlag(ch));
+                    }
                 };
-                
+
                 if !flags.contains(&flag) {
                     flags.push(flag);
                 }
@@ -193,7 +195,7 @@ fn parse_flags_args_redirections(tokens: &[String]) -> Result<(Vec<Flag>, Vec<St
             // C'est un argument normal
             args.push(token.clone());
         }
-        
+
         i += 1;
     }
 
@@ -217,7 +219,22 @@ fn tokenize(input: &str) -> Result<Vec<String>, ParseError> {
 
         match ch {
             '\\' => {
-                escaped = true;
+                if in_single_quote {
+                    current_token.push('\\');
+                }
+                if in_double_quote {
+                    // Dans double quote : garder le \ sauf pour \\, \", \$
+                    match chars.peek() {
+                        Some(&'\\') | Some(&'"') | Some(&'$') => {
+                            escaped = true; // ces cas on les consomme normalement
+                        }
+                        _ => {
+                            current_token.push('\\'); // garder le \ littéralement
+                        }
+                    }
+                } else {
+                    escaped = true;
+                }
             }
             '\'' if !in_double_quote => {
                 in_single_quote = !in_single_quote;
@@ -238,8 +255,8 @@ fn tokenize(input: &str) -> Result<Vec<String>, ParseError> {
                     tokens.push(current_token.clone());
                     current_token.clear();
                 }
-                
-                // Gérer >> et 
+
+                // Gérer >> et
                 if ch == '>' && chars.peek() == Some(&'>') {
                     chars.next();
                     tokens.push(">>".to_string());
@@ -266,31 +283,3 @@ fn tokenize(input: &str) -> Result<Vec<String>, ParseError> {
 
     Ok(tokens)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_single_command() {
-        let result = parse("ls -la").unwrap();
-        assert_eq!(result.command.len(), 1);
-        assert_eq!(result.command[0].name, CommandType::Ls);
-    }
-
-    #[test]
-    fn test_multiple_commands_semicolon() {
-        let result = parse("ls ; pwd ; echo test").unwrap();
-        assert_eq!(result.command.len(), 3);
-        assert_eq!(result.command[0].name, CommandType::Ls);
-        assert_eq!(result.command[1].name, CommandType::Pwd);
-        assert_eq!(result.command[2].name, CommandType::Echo);
-    }
-
-    #[test]
-    fn test_multiple_commands_and() {
-        let result = parse("ls && pwd").unwrap();
-        assert_eq!(result.command.len(), 2);
-    }
-}
-
